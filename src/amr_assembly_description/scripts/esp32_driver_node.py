@@ -98,7 +98,8 @@ class ESP32SerialDriver(Node):
 
     def _cmd_pos_callback(self, msg: Float32MultiArray):
         if len(msg.data) >= 2:
-            cmd = f'M {msg.data[0]:.4f} {msg.data[1]:.4f}\n'.encode()
+            # Send continuous velocity in RPS (revolutions/second)
+            cmd = f'V {msg.data[0]:.4f} {msg.data[1]:.4f}\n'.encode()
             self._send(cmd)
 
     def _send(self, data: bytes):

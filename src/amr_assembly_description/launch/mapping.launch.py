@@ -101,10 +101,10 @@ def generate_launch_description():
         parameters=[{
             'axis_linear.x':  1,       # Left stick Y axis
             'axis_angular.yaw': 0,     # Left stick X axis
-            'scale_linear.x':  0.3,    # Normal speed: 0.3 m/s
-            'scale_angular.yaw': 0.8,  # Normal turn:  0.8 rad/s
-            'scale_linear_turbo.x': 0.6,   # Turbo speed: 0.6 m/s
-            'scale_angular_turbo.yaw': 1.5, # Turbo turn:  1.5 rad/s
+            'scale_linear.x':  0.25,   # Normal speed: 0.25 m/s (ultra-smooth tea-safe)
+            'scale_angular.yaw': 0.60, # Normal turn:  0.60 rad/s (gentle turning)
+            'scale_linear_turbo.x': 0.45,   # Turbo speed: 0.45 m/s
+            'scale_angular_turbo.yaw': 1.0, # Turbo turn:  1.00 rad/s
             'enable_button': 4,        # L1 = enable (hold to drive)
             'enable_turbo_button': 5,  # R1 = turbo
             'require_enable_button': True,

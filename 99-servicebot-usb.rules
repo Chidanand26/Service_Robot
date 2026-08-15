@@ -1,0 +1,9 @@
+# AMR ServiceBot — Permanent USB Device Symlinks & Permissions
+KERNEL=="ttyUSB*", MODE="0666"
+KERNEL=="ttyACM*", MODE="0666"
+
+# Symlinks based on detected hardware port paths
+SUBSYSTEM=="tty", KERNELS=="2-1", SYMLINK+="rplidar", MODE="0666"
+SUBSYSTEM=="tty", KERNELS=="4-2", SYMLINK+="rplidar", MODE="0666"
+SUBSYSTEM=="tty", KERNELS=="2-2", SYMLINK+="esp32", MODE="0666"
+SUBSYSTEM=="tty", KERNELS=="4-1", SYMLINK+="esp32", MODE="0666"

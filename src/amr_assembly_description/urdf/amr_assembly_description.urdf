@@ -1,0 +1,356 @@
+<?xml version="1.0"?>
+<robot name="amr_assembly">
+
+  <!-- =====================================================================
+       amr_assembly  —  differential-drive service robot (SolidWorks export)
+       Cleaned for ROS 2: robot_state_publisher / tf2 / RViz2 / Gazebo.
+
+       Frame conventions (REP-103):  +X forward, +Y left, +Z up.
+
+       *** 180-DEG FRAME CORRECTION APPLIED ***
+       The physical FRONT of the robot is the LiDAR + RealSense side.
+       In the raw CAD export that side pointed to base_link -X.  base_link has
+       been redefined as a proper ROS frame:
+         * rotated 180 deg about Z relative to the CAD frame, so the LiDAR /
+           RealSense side is now +X (forward);
+         * origin placed on the drive-wheel axle centreline and midway between
+           the wheels (CAD point -0.225, 0.1725, 0), so the wheel midpoint lies
+           on the robot centreline (Y=0).
+       NO mesh geometry was moved.  The correction lives entirely in the joint
+       origin/rpy values (each mesh visual origin carries a compensating
+       transform so every part stays physically where the CAD placed it).
+
+       VERIFIED FROM MESH DATA + FRAME MATH:
+         * drive wheel radius = 0.080 m (mesh X/Z span 0.1599, spin axis = +Y)
+         * drive-wheel lowest point = base_link Z -0.055  ->  base_footprint OK
+         * left_wheel  now at +Y (mesh wheel_1_2), right_wheel at -Y (wheel_1)
+         * both wheels: +velocity about +Y  ->  +X forward motion
+         * laser_frame == world orientation  -> scan plane horizontal in XY
+         * imu_link   == world orientation  -> X fwd / Y left / Z up
+         * camera optical Z = +X (viewing dir), X = right, Y = down (REP-103)
+         * LiDAR (+X 0.19) and RealSense (+X 0.24) both on the +X/front side
+
+       NEEDS PHYSICAL VERIFICATION (mass/inertia only — geometry is verified):
+         * chassis density = SolidWorks default 1000 (water); mass 2.58 kg is a
+           placeholder.  LiDAR density 4335.71 tagged "1060-H14" (Al~2700) looks
+           inconsistent.  RealSense 0.038 kg vs real D435i ~0.072 kg.  Values
+           are PRESERVED from the export, not invented — replace when known.
+       ===================================================================== -->
+
+  <!-- ==================== Base Footprint & Base Link ==================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <origin xyz="0 0 0.055" rpy="0 0 0" />
+    <parent link="base_footprint" />
+    <child link="base_link" />
+  </joint>
+
+  <link name="base_link">
+    <!-- sw2robot density="1000" inertia="solidworks" -->
+    <visual>
+      <!-- chassis mesh compensated back to its physical CAD pose -->
+      <origin xyz="-0.225 0.1725 0" rpy="0 0 3.14159265359" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/Chassis_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="-0.225 0.1725 0" rpy="0 0 3.14159265359" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/Chassis_1.stl" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-0.00027745 0.1725 0.40790949" rpy="0 0 3.14159265359" />
+      <mass value="2.58114" />
+      <inertia ixx="0.204923" ixy="1.30104e-18" ixz="2.47797e-05" iyy="0.225004" iyz="1.74557e-17" izz="0.107037" />
+    </inertial>
+  </link>
+
+  <!-- ==================== Differential-Drive Wheels ====================
+       After the 180-deg base flip the physical sides swap:
+         left_wheel  = CAD wheel at Y=-0.041  -> mesh wheel_1_2  -> ROS +Y
+         right_wheel = CAD wheel at Y=+0.386  -> mesh wheel_1    -> ROS -Y
+       joint rpy=pi keeps each mesh physically put; axis="0 -1 0" (child frame)
+       resolves to world +Y so +velocity drives the robot forward (+X). -->
+  <link name="left_wheel">
+    <!-- physical LEFT wheel (+Y); mesh wheel_1_2 -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/wheel_1_2.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: drive-wheel primitive (r=0.080, w=0.050, axis=+Y local) -->
+      <origin xyz="0 0 0" rpy="1.5707963 0 0" />
+      <geometry>
+        <cylinder radius="0.080" length="0.050" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-9.7144515e-17 0.0051290801 1.5612511e-17" rpy="0 0 0" />
+      <mass value="0.996474" />
+      <inertia ixx="0.00181597" ixy="3.51575e-36" ixz="-4.98632e-20" iyy="0.00321674" iyz="-3.77852e-36" izz="0.00181597" />
+    </inertial>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <origin xyz="0 0.2135 0.025" rpy="0 0 3.14159265359" />
+    <parent link="base_link" />
+    <child link="left_wheel" />
+    <axis xyz="0 -1 0" />
+    <!-- mates: CONCENTRIC, CONCENTRIC -->
+  </joint>
+
+  <link name="right_wheel">
+    <!-- physical RIGHT wheel (-Y); mesh wheel_1 -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/wheel_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: drive-wheel primitive (r=0.080, w=0.050, axis=+Y local) -->
+      <origin xyz="0 0 0" rpy="1.5707963 0 0" />
+      <geometry>
+        <cylinder radius="0.080" length="0.050" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-9.5409791e-17 -0.0044220319 -4.3368087e-18" rpy="0 0 0" />
+      <mass value="0.996474" />
+      <inertia ixx="0.00181597" ixy="2.00001e-36" ixz="-1.80785e-19" iyy="0.00321674" iyz="-4.75791e-36" izz="0.00181597" />
+    </inertial>
+  </link>
+
+  <joint name="right_wheel_joint" type="continuous">
+    <origin xyz="0 -0.2135 0.025" rpy="0 0 3.14159265359" />
+    <parent link="base_link" />
+    <child link="right_wheel" />
+    <axis xyz="0 -1 0" />
+    <!-- mates: CONCENTRIC, CONCENTRIC -->
+  </joint>
+
+  <!-- ==================== Passive Caster Wheels ==================== -->
+  <link name="caster_wheel1">
+    <!-- sw2robot density="1000" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/C_wheel_2_WS_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: caster contact sphere (bottom matches CAD mesh, r=0.030) -->
+      <origin xyz="0 -0.009174 -0.008682" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.030" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-5e-08 -0.008653401 0.003658362" rpy="0 0 0" />
+      <mass value="0.0585304" />
+      <inertia ixx="3.05e-05" ixy="-1.01609e-20" ixz="2.14745e-21" iyy="1.86277e-05" iyz="-8.03269e-06" izz="2.56674e-05" />
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel1_joint" type="fixed">
+    <origin xyz="0.120775 0.117491 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <parent link="base_link" />
+    <child link="caster_wheel1" />
+  </joint>
+
+  <link name="caster_wheel2">
+    <!-- sw2robot density="1000" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/C_wheel_2_WS_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: caster contact sphere (bottom matches CAD mesh, r=0.030) -->
+      <origin xyz="0 -0.009174 -0.008682" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.030" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-5e-08 -0.008653401 0.003658362" rpy="0 0 0" />
+      <mass value="0.0585304" />
+      <inertia ixx="3.05e-05" ixy="-1.01609e-20" ixz="2.14745e-21" iyy="1.86277e-05" iyz="-8.03269e-06" izz="2.56674e-05" />
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel2_joint" type="fixed">
+    <origin xyz="-0.149932 -0.117423 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <parent link="base_link" />
+    <child link="caster_wheel2" />
+  </joint>
+
+  <link name="caster_wheel3">
+    <!-- sw2robot density="1000" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/C_wheel_2_WS_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: caster contact sphere (bottom matches CAD mesh, r=0.030) -->
+      <origin xyz="0 -0.009174 -0.008682" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.030" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-5e-08 -0.008653401 0.003658362" rpy="0 0 0" />
+      <mass value="0.0585304" />
+      <inertia ixx="3.05e-05" ixy="-1.01609e-20" ixz="2.14745e-21" iyy="1.86277e-05" iyz="-8.03269e-06" izz="2.56674e-05" />
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel3_joint" type="fixed">
+    <origin xyz="0.121583 -0.117333 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <parent link="base_link" />
+    <child link="caster_wheel3" />
+  </joint>
+
+  <link name="caster_wheel4">
+    <!-- sw2robot density="1000" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/C_wheel_2_WS_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: caster contact sphere (bottom matches CAD mesh, r=0.030) -->
+      <origin xyz="0 -0.009174 -0.008682" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.030" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-5e-08 -0.008653401 0.003658362" rpy="0 0 0" />
+      <mass value="0.0585304" />
+      <inertia ixx="3.05e-05" ixy="-1.01609e-20" ixz="2.14745e-21" iyy="1.86277e-05" iyz="-8.03269e-06" izz="2.56674e-05" />
+    </inertial>
+  </link>
+
+  <joint name="caster_wheel4_joint" type="fixed">
+    <origin xyz="-0.149381 0.116260 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <parent link="base_link" />
+    <child link="caster_wheel4" />
+  </joint>
+
+  <!-- ==================== RPLIDAR A1 2D LiDAR ==================== -->
+  <link name="lidar_link">
+    <!-- sw2robot material="1060-H14" density="4335.71" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/RPLIDAR_A1_1_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: RPLIDAR bounding box (CAD collision mesh was 666k verts) -->
+      <origin xyz="0.007551 -0.001935 -0.000714" rpy="0 0 0" />
+      <geometry>
+        <box size="0.097455 0.055500 0.071769" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.006729702 -0.003001698 -0.000182521" rpy="0 0 0" />
+      <mass value="0.317515" />
+      <inertia ixx="0.00013828" ixy="-2.82363e-05" ixz="-2.57853e-06" iyy="0.000313414" iyz="1.65427e-06" izz="0.000267995" />
+    </inertial>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <origin xyz="0.192495 -0.003059 0.760213094" rpy="1.5707963 0 3.14159265359" />
+    <parent link="base_link" />
+    <child link="lidar_link" />
+  </joint>
+
+  <link name="laser_frame"/>
+
+  <!-- laser_joint aligns the scan frame to world (X fwd, Y left, Z up) so the
+       2D scan sweeps the horizontal XY plane. -->
+  <joint name="laser_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="1.5707963 0 -3.14159265359" />
+    <parent link="lidar_link" />
+    <child link="laser_frame" />
+  </joint>
+
+  <!-- ==================== Intel RealSense Depth Camera ==================== -->
+  <link name="camera_link">
+    <!-- sw2robot density="1037.94" inertia="solidworks" -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/Intel_RealSense_Depth_Camera_D435i_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <!-- simplified: RealSense bounding box (CAD collision mesh was 371k verts) -->
+      <origin xyz="0.000489 0.000050 -0.002050" rpy="0 0 0" />
+      <geometry>
+        <box size="0.089915 0.025000 0.025052" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.002129176 5.2113e-05 -0.002796544" rpy="0 0 0" />
+      <mass value="0.0381912" />
+      <inertia ixx="3.66644e-06" ixy="-1.28474e-08" ixz="-1.60586e-07" iyy="2.4858e-05" iyz="-1.2968e-08" izz="2.46858e-05" />
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <origin xyz="0.241580 0.009331 0.156845974" rpy="1.79844 0 1.5707963" />
+    <parent link="base_link" />
+    <child link="camera_link" />
+  </joint>
+
+  <link name="camera_depth_optical_frame"/>
+
+  <!-- optical frame: Z = viewing direction, X = right, Y = down (REP-103) -->
+  <joint name="camera_optical_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 3.14159265359" />
+    <parent link="camera_link" />
+    <child link="camera_depth_optical_frame" />
+  </joint>
+
+  <!-- ==================== IMU ==================== -->
+  <link name="imu_link">
+    <!-- sw2robot density="1000" inertia="solidworks" ; imu_link = world frame,
+         mesh visual origin compensated to keep the physical part in place. -->
+    <visual>
+      <origin xyz="0 0 0" rpy="-3.14159265359 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/imu_1.dae" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="-3.14159265359 0 0" />
+      <geometry>
+        <mesh filename="package://amr_assembly_description/meshes/imu_1.stl" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="-3.3e-07 -6e-08 0" rpy="-3.14159265359 0 0" />
+      <mass value="0.000409729" />
+      <inertia ixx="6.45437e-09" ixy="-5.29396e-24" ixz="0" iyy="3.84494e-09" iyz="-1.8498e-25" izz="9.68472e-09" />
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0.012176 0.011495 0.146499993" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="imu_link" />
+  </joint>
+
+</robot>

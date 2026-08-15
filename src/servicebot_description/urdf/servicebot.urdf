@@ -1,0 +1,147 @@
+<?xml version="1.0"?>
+<robot name="servicebot">
+
+  <!-- Materials -->
+  <material name="Steel">
+    <color rgba="0.627 0.627 0.627 1.0"/>
+  </material>
+
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0.190000 0.222500 0.094538" rpy="0 0 0"/>
+      <mass value="44.753795"/>
+      <inertia ixx="1.445927e+00" ixy="4.440892e-16" ixz="-3.330669e-16"
+               iyy="1.192469e+00" iyz="5.551115e-16" izz="2.044259e+00"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/base_link.dae" scale="1 1 1"/>
+      </geometry>
+      <material name="Steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/base_link_collision.stl" scale="0.01 0.01 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="left_wheel">
+    <inertial>
+      <origin xyz="0.000000 0.025000 0.000000" rpy="0 0 0"/>
+      <mass value="6.936048"/>
+      <inertia ixx="1.119882e-02" ixy="2.498837e-18" ixz="-1.713488e-17"
+               iyy="1.950763e-02" iyz="4.640697e-18" izz="1.119883e-02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/servicebot_wheels.dae" scale="1 1 1"/>
+      </geometry>
+      <material name="Steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/servicebot_wheels_collision.stl" scale="0.01 0.01 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="right_wheels">
+    <inertial>
+      <origin xyz="0.000000 0.025000 0.000000" rpy="0 0 0"/>
+      <mass value="6.936048"/>
+      <inertia ixx="1.119882e-02" ixy="2.498837e-18" ixz="-1.713488e-17"
+               iyy="1.950763e-02" iyz="4.640697e-18" izz="1.119883e-02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/servicebot_wheels_2.dae" scale="1 1 1"/>
+      </geometry>
+      <material name="Steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/servicebot_wheels_2_collision.stl" scale="0.01 0.01 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="lidar">
+    <inertial>
+      <origin xyz="-0.000000 -0.005155 0.018314" rpy="0 0 0"/>
+      <mass value="4.523037"/>
+      <inertia ixx="6.953012e-03" ixy="1.033764e-13" ixz="1.341999e-13"
+               iyy="5.509067e-03" iyz="-3.104390e-04" izz="1.117998e-02"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/lidar.dae" scale="1 1 1"/>
+      </geometry>
+      <material name="Steel"/>
+    </visual>
+    <collision>
+      <origin xyz="0.000000 0.000000 0.000000" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://servicebot_description/meshes/servicebot/lidar_collision.stl" scale="0.01 0.01 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="servicebot_wheels"/>
+    <origin xyz="0.190000 0.050000 0.000000" rpy="-3.141593 -0.000000 0.000000"/>
+    <axis xyz="-0.000000 1.000000 -0.000000"/>
+    <limit effort="100.0" velocity="1.00"/>
+  </joint>
+
+  <joint name="Right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="servicebot_wheels_2"/>
+    <origin xyz="0.190000 0.395000 0.000000" rpy="0.000000 -0.000000 -0.000000"/>
+    <axis xyz="-0.000000 1.000000 0.000000"/>
+    <limit effort="100.0" velocity="1.00"/>
+  </joint>
+
+  <joint name="Rigid_3" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar"/>
+    <origin xyz="0.370000 0.222500 0.254000" rpy="0.000000 0.000000 -1.570796"/>
+  </joint>
+
+  <!-- ROS 2 control: generated generic system -->
+  <ros2_control name="servicebot_system" type="system">
+    <hardware>
+      <plugin>mock_components/GenericSystem</plugin>
+      <param name="cmd_topic">sim/servicebot_system/cmd</param>
+      <param name="state_topic">sim/servicebot_system/state</param>
+    </hardware>
+
+    <joint name="left_wheel_joint">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+    <joint name="right_wheel_joint">
+      <command_interface name="position"/>
+      <command_interface name="velocity"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="effort"/>
+    </joint>
+  </ros2_control>
+
+</robot>

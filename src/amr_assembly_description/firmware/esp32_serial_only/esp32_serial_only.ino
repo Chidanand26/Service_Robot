@@ -27,7 +27,7 @@
 #define M2_DIR 33
 
 const float PPR = 4000.0f;          // 800 microsteps × 5:1 planetary gearbox
-const float MAX_ACCEL_RPS2 = 0.75f; // Max accel in rev/s²
+const float MAX_ACCEL_RPS2 = 5.0f;  // Instantaneous hardware tracking (ROS handles S-curve)
 const float MAX_SPEED_RPS  = 1.5f;  // Max speed in rev/s
 
 const uint32_t TELEM_INTERVAL_MS = 20;  // 50 Hz ROS telemetry

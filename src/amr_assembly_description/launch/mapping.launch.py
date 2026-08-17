@@ -12,17 +12,11 @@ Supports:
 import os
 from ament_index_python.packages import get_package_share_directory, get_packages_with_prefixes
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, EmitEvent, GroupAction,
-                            IncludeLaunchDescription, LogInfo, RegisterEventHandler,
-                            TimerAction)
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.conditions import IfCondition, UnlessCondition
-from launch.events import matches_action
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node, PushRosNamespace
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
+from launch_ros.actions import Node, PushRosNamespace
 
 
 def resolve_ports():
@@ -257,53 +251,22 @@ def generate_launch_description():
     )
 
 
-    # 5. SLAM Toolbox Lifecycle Node (delayed auto-configure + auto-activate)
-    start_async_slam_toolbox_node = LifecycleNode(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        parameters=[
-            slam_params_file,
-            {
-                'use_lifecycle_manager': False,
-                'use_sim_time': False,
-            }
-        ],
-        output='screen',
-        namespace=''
+    # 5. SLAM Toolbox (Clean launch using official online_async_launch)
+    slam_toolbox_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory('slam_toolbox'),
+                'launch',
+                'online_async_launch.py'
+            )
+        ),
+        launch_arguments={
+            'slam_params_file': slam_params_file,
+            'use_sim_time': 'false',
+            'autostart': 'true',
+            'use_lifecycle_manager': 'false',
+        }.items(),
     )
-
-    # Delayed CONFIGURE (wait 5s for all other nodes to start first)
-    configure_event = TimerAction(
-        period=5.0,
-        actions=[
-            EmitEvent(
-                event=ChangeState(
-                    lifecycle_node_matcher=matches_action(start_async_slam_toolbox_node),
-                    transition_id=Transition.TRANSITION_CONFIGURE,
-                )
-            ),
-        ],
-    )
-
-    # Auto-ACTIVATE once CONFIGURE completes (inactive → active)
-    activate_event = RegisterEventHandler(
-        OnStateTransition(
-            target_lifecycle_node=start_async_slam_toolbox_node,
-            start_state='configuring',
-            goal_state='inactive',
-            entities=[
-                LogInfo(msg='[SLAM] Configuring done, auto-activating...'),
-                EmitEvent(
-                    event=ChangeState(
-                        lifecycle_node_matcher=matches_action(start_async_slam_toolbox_node),
-                        transition_id=Transition.TRANSITION_ACTIVATE,
-                    )
-                ),
-            ],
-        )
-    )
-
 
     # 6. RViz2
     rviz_node = Node(
@@ -362,9 +325,7 @@ def generate_launch_description():
             hardware_esp32_wifi_node,
             hardware_esp32_serial_node,
             realsense_camera_launch,
-            start_async_slam_toolbox_node,
-            configure_event,
-            activate_event,
+            slam_toolbox_launch,
             rviz_node,
         ]),
     ]

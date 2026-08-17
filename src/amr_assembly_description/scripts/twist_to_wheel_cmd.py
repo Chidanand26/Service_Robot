@@ -44,14 +44,14 @@ class TwistToWheelCmd(Node):
         self.w_smooth = 0.0
         self.a_w = 0.0
 
-        # Motion limits — "Tea-Cup Safe" Profile
+        # Motion limits — Fast & Smooth S-Curve Profile (Zero-lag, Zero-jerk)
         # Linear motion limits
-        self.max_accel_v = 0.25   # m/s² max linear acceleration
-        self.max_jerk_v  = 0.75   # m/s³ max linear jerk (limits rate of change of acceleration)
+        self.max_accel_v = 0.50   # m/s² max linear acceleration
+        self.max_jerk_v  = 2.50   # m/s³ max linear jerk (instant start, smooth curve)
 
         # Angular motion limits
-        self.max_accel_w = 0.60   # rad/s² max angular acceleration
-        self.max_jerk_w  = 1.50   # rad/s³ max angular jerk
+        self.max_accel_w = 1.20   # rad/s² max angular acceleration
+        self.max_jerk_w  = 4.00   # rad/s³ max angular jerk
 
         self.last_timer_time = time.monotonic()
 
@@ -87,7 +87,7 @@ class TwistToWheelCmd(Node):
         # ─── S-Curve Linear Velocity Filter ────────────────────────────────────
         # Calculate desired acceleration toward target
         error_v = self.target_v - self.v_smooth
-        desired_a_v = error_v / 0.12  # Time constant for exponential response
+        desired_a_v = error_v / 0.05  # Snappy 50ms time constant
         desired_a_v = max(-self.max_accel_v, min(self.max_accel_v, desired_a_v))
 
         # Jerk-limit the acceleration change
@@ -106,7 +106,7 @@ class TwistToWheelCmd(Node):
 
         # ─── S-Curve Angular Velocity Filter ───────────────────────────────────
         error_w = self.target_w - self.w_smooth
-        desired_a_w = error_w / 0.10
+        desired_a_w = error_w / 0.05
         desired_a_w = max(-self.max_accel_w, min(self.max_accel_w, desired_a_w))
 
         da_w = desired_a_w - self.a_w

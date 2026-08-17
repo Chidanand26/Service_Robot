@@ -344,8 +344,8 @@ def generate_launch_description():
             description='Set to true to run interactive simulation without hardware',
         ),
         DeclareLaunchArgument(
-            'enable_camera', default_value='true',
-            description='Set to true to enable Intel RealSense D435i depth camera',
+            'enable_camera', default_value='false',
+            description='Set to true to enable Intel RealSense D435i depth camera (can be enabled if connected on USB 3.0)',
         ),
 
         GroupAction([

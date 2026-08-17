@@ -236,7 +236,7 @@ def generate_launch_description():
         DeclareLaunchArgument('serial_baudrate', default_value='115200', description='RPLiDAR baudrate'),
         DeclareLaunchArgument('esp_port', default_value=auto_esp, description='ESP32 port (auto-detected)'),
         DeclareLaunchArgument('use_esp32', default_value='true', description='Enable ESP32 serial driver'),
-        DeclareLaunchArgument('enable_camera', default_value='true', description='Enable RealSense D435i camera'),
+        DeclareLaunchArgument('enable_camera', default_value='false', description='Enable RealSense D435i camera'),
         DeclareLaunchArgument('autostart', default_value='true', description='Automatically startup Nav2 stack'),
 
         GroupAction([

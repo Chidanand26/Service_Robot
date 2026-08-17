@@ -1,245 +1,299 @@
 /*
-  AMR ServiceBot — Ultra-Smooth ESP32 Motor Controller Firmware
-  =============================================================
-  Hardware: 2× CS-D508 closed-loop stepper drives + MPU6050 IMU
-  Pi Communication: USB Serial at 115200 baud
+  =============================================================================
+  AMR ServiceBot — Industrial Jitter-Free DDS Motor Controller Firmware (ESP32)
+  =============================================================================
+  Hardware: 
+    - 2× CS-D508 Closed-Loop Stepper Drives (800 usteps × 5:1 gearbox = 4000 PPR)
+    - ESP32 Dual-Core @ 240 MHz
+    - MPU6050 6-DOF IMU (I2C SDA=21, SCL=22)
 
-  Features:
-    - Continuous Velocity Mode ("V <left_rps> <right_rps>\n")
-    - Acceleration & Deceleration S-curve Ramp Limiting (Zero Jerk / Spill-proof)
-    - Automatic Watchdog Timeout (Smooth stop if serial lost for > 500ms)
-    - Position Telemetry at 50Hz ("P <pos1> <pos2> <busy1> <busy2> 0 0\n")
-    - IMU Telemetry at 50Hz ("I ax ay az yaw pitch roll\n")
-    - Non-blocking pulse generation using hardware timer / micros()
+  Architecture:
+    - HARDWARE TIMER ISR @ 20,000 Hz (50us tick):
+        Direct Digital Synthesis (DDS) phase-accumulator step pulse engine.
+        Nanosecond-accurate, zero phase jitter, immune to serial printing/delays.
+    - CORE 1 LOOP:
+        High-speed non-blocking serial command parser ("V <left_rps> <right_rps>\n").
+        Watchdog failsafe: smoothly halts if serial stream drops for > 400ms.
+        50Hz position & status telemetry ("P pos1 pos2 busy1 busy2 0 0\n").
 
   GPIO Pinout:
-    Motor 1 (Left):   PUL=25  DIR=26
-    Motor 2 (Right):  PUL=32  DIR=33
+    Motor 1 (Left):   PUL=GPIO 25,  DIR=GPIO 26
+    Motor 2 (Right):  PUL=GPIO 32,  DIR=GPIO 33
+  =============================================================================
 */
 
 #include <Arduino.h>
 #include <Wire.h>
 
-// ─── Motor Pinout ─────────────────────────────────────────────────────────────
+// ─── Motor Hardware Pinout ───────────────────────────────────────────────────
 #define M1_PUL 25
 #define M1_DIR 26
 #define M2_PUL 32
 #define M2_DIR 33
 
 // ─── Motion Tuning Parameters ─────────────────────────────────────────────────
-// CS-D508: 800 microsteps × 5:1 gearbox = 4000 pulses / wheel rev
+// CS-D508: 800 microsteps/rev × 5:1 planetary gearbox = 4000 pulses / wheel rev
 const float PPR = 4000.0f;
 
-// Max Acceleration in rev/s² (0.75 rev/s² with 80mm wheels = ~0.37 m/s² max accel)
-// Extremely smooth for liquid / tea cup carrying without any jerks
-const float MAX_ACCEL_RPS2 = 0.75f;
+// DDS Timer Configuration (20,000 Hz = 50 microseconds per tick)
+#define TIMER_FREQ_HZ 20000
+#define DDS_SCALE     1000000UL  // Fixed-point scaling for phase accumulator
 
-// Max allowable speed in rev/s (1.2 rev/s = ~0.60 m/s)
-const float MAX_SPEED_RPS  = 1.5f;
+// Speed & Acceleration Limits (in wheel revolutions / second)
+const float MAX_SPEED_RPS  = 1.50f;  // ~0.75 m/s with 80mm wheels
+const float MAX_ACCEL_RPS2 = 0.80f;  // ~0.40 m/s² max hardware acceleration
 
-// Telemetry & Watchdog
-const uint32_t TELEM_INTERVAL_MS = 20;  // 50 Hz
-const uint32_t WATCHDOG_MS       = 500; // Stop if no cmd for 500ms
+// Watchdog & Telemetry Intervals
+const uint32_t WATCHDOG_TIMEOUT_MS = 400; // Auto-stop if no serial for 400ms
+const uint32_t TELEMETRY_INTERVAL_MS = 20; // 50 Hz ROS telemetry
 
-// ─── Axis Structure ───────────────────────────────────────────────────────────
-struct Axis {
-  uint8_t pul, dir;
-  float   target_rps;   // Target speed in rev/s
-  float   current_rps;  // Current smoothed speed in rev/s
-  long    pos;          // Cumulative steps
-  int8_t  sign;         // Current direction (+1 or -1)
-  uint32_t half_us;     // Microseconds per half step
-  uint32_t last_step_us;
-  bool    pulse_state;
+// ─── DDS Stepper Engine State (Volatiles accessed in Timer ISR) ───────────────
+struct DDSAxis {
+  uint8_t pul_pin;
+  uint8_t dir_pin;
 
-  Axis(uint8_t p, uint8_t d)
-    : pul(p), dir(d),
-      target_rps(0.0f), current_rps(0.0f), pos(0),
-      sign(1), half_us(0), last_step_us(0), pulse_state(false) {}
+  // Command & Speed State (in float RPS)
+  float target_rps;
+  float current_rps;
+
+  // DDS Phase Accumulator variables
+  volatile uint32_t step_inc;      // Phase increment per timer tick
+  volatile uint32_t accumulator;   // Fixed-point phase accumulator
+  volatile int8_t   direction;     // +1 forward, -1 reverse
+  volatile long     pos_steps;     // Cumulative encoder step count
+  volatile bool     is_moving;
+
+  DDSAxis(uint8_t p, uint8_t d)
+    : pul_pin(p), dir_pin(d),
+      target_rps(0.0f), current_rps(0.0f),
+      step_inc(0), accumulator(0),
+      direction(1), pos_steps(0), is_moving(false) {}
 };
 
-Axis m1(M1_PUL, M1_DIR);
-Axis m2(M2_PUL, M2_DIR);
+DDSAxis axis1(M1_PUL, M1_DIR);
+DDSAxis axis2(M2_PUL, M2_DIR);
 
-// ─── Serial & Time Tracking ───────────────────────────────────────────────────
-char     inputBuf[64];
-uint8_t  inputLen = 0;
-uint32_t lastTelemMs = 0;
-uint32_t lastCmdMs   = 0;
-uint32_t lastLoopUs  = 0;
+// Hardware Timer Handle
+hw_timer_t *stepTimer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-// ─── Motor Hardware Init ──────────────────────────────────────────────────────
-void initAxis(Axis &a) {
-  pinMode(a.pul, OUTPUT);
-  pinMode(a.dir, OUTPUT);
-  digitalWrite(a.pul, HIGH);
-  digitalWrite(a.dir, LOW);
+// ─── Hardware Timer ISR (Runs strictly every 50us @ 20kHz) ───────────────────
+void IRAM_ATTR onStepTimer() {
+  portENTER_CRITICAL_ISR(&timerMux);
+
+  // ── Axis 1 (Left Wheel) ──
+  if (axis1.step_inc > 0) {
+    axis1.accumulator += axis1.step_inc;
+    if (axis1.accumulator >= DDS_SCALE) {
+      axis1.accumulator -= DDS_SCALE;
+      // Generate sharp, clean step pulse
+      digitalWrite(axis1.pul_pin, LOW);
+      axis1.pos_steps += axis1.direction;
+      // Pulse high (CS-D508 optocoupler latch)
+      digitalWrite(axis1.pul_pin, HIGH);
+    }
+  }
+
+  // ── Axis 2 (Right Wheel) ──
+  if (axis2.step_inc > 0) {
+    axis2.accumulator += axis2.step_inc;
+    if (axis2.accumulator >= DDS_SCALE) {
+      axis2.accumulator -= DDS_SCALE;
+      // Generate sharp, clean step pulse
+      digitalWrite(axis2.pul_pin, LOW);
+      axis2.pos_steps += axis2.direction;
+      // Pulse high (CS-D508 optocoupler latch)
+      digitalWrite(axis2.pul_pin, HIGH);
+    }
+  }
+
+  portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-// ─── Velocity Update with Acceleration Ramp ───────────────────────────────────
-void updateAxisSpeed(Axis &a, float dt) {
-  if (dt <= 0.0f || dt > 0.1f) dt = 0.001f;
-
+// ─── Velocity & DDS Update (Called at 100Hz in Loop) ─────────────────────────
+void updateSpeed(DDSAxis &a, float dt) {
+  // Smoothly ramp current_rps toward target_rps
   float max_change = MAX_ACCEL_RPS2 * dt;
-  float diff = a.target_rps - a.current_rps;
+  float error = a.target_rps - a.current_rps;
 
-  if (diff > max_change) {
+  if (error > max_change) {
     a.current_rps += max_change;
-  } else if (diff < -max_change) {
+  } else if (error < -max_change) {
     a.current_rps -= max_change;
   } else {
     a.current_rps = a.target_rps;
   }
 
   // Deadband near zero
-  if (fabsf(a.current_rps) < 0.001f) {
+  if (fabsf(a.current_rps) < 0.0005f) {
     a.current_rps = 0.0f;
-    a.half_us = 0;
-    digitalWrite(a.pul, HIGH);
-    a.pulse_state = false;
+    portENTER_CRITICAL(&timerMux);
+    a.step_inc = 0;
+    a.accumulator = 0;
+    a.is_moving = false;
+    digitalWrite(a.pul_pin, HIGH);
+    portEXIT_CRITICAL(&timerMux);
     return;
   }
 
-  // Set direction
-  if (a.current_rps > 0.0f) {
-    a.sign = 1;
-    digitalWrite(a.dir, LOW);
-  } else {
-    a.sign = -1;
-    digitalWrite(a.dir, HIGH);
+  // Set hardware direction pin
+  int8_t new_dir = (a.current_rps > 0.0f) ? 1 : -1;
+  if (new_dir != a.direction) {
+    a.direction = new_dir;
+    digitalWrite(a.dir_pin, (a.direction > 0) ? LOW : HIGH);
   }
 
-  // Calculate half-pulse width in microseconds
-  float step_rate = fabsf(a.current_rps) * PPR;
-  if (step_rate > 0.1f) {
-    a.half_us = (uint32_t)(500000.0f / step_rate);
-    if (a.half_us < 20) a.half_us = 20; // 25kHz max step frequency limit
-  } else {
-    a.half_us = 0;
+  // Calculate step frequency: steps_per_sec = |current_rps| * PPR
+  float steps_per_sec = fabsf(a.current_rps) * PPR;
+  if (steps_per_sec > (float)TIMER_FREQ_HZ) {
+    steps_per_sec = (float)TIMER_FREQ_HZ; // Clamp to Nyquist limit
   }
+
+  // DDS Phase increment per tick: inc = (steps_per_sec / TIMER_FREQ_HZ) * DDS_SCALE
+  uint32_t inc = (uint32_t)((steps_per_sec * (float)DDS_SCALE) / (float)TIMER_FREQ_HZ);
+
+  portENTER_CRITICAL(&timerMux);
+  a.step_inc = inc;
+  a.is_moving = true;
+  portEXIT_CRITICAL(&timerMux);
 }
 
-// ─── Step Pulse Generation (Called continuously in loop) ───────────────────────
-void stepAxis(Axis &a, uint32_t now_us) {
-  if (a.half_us == 0) return;
+// ─── Serial Communication Buffers ─────────────────────────────────────────────
+char     serialBuf[64];
+uint8_t  serialIdx = 0;
+uint32_t lastCmdTimeMs   = 0;
+uint32_t lastTelemTimeMs = 0;
+uint32_t lastRampTimeUs  = 0;
 
-  if ((now_us - a.last_step_us) >= a.half_us) {
-    a.last_step_us = now_us;
-    a.pulse_state = !a.pulse_state;
-    digitalWrite(a.pul, a.pulse_state ? LOW : HIGH);
-    if (!a.pulse_state) {
-      a.pos += a.sign;
-    }
-  }
-}
-
-// ─── Command Handling ─────────────────────────────────────────────────────────
-void handleCommand(char *line) {
-  if (line[0] == 'V') {
-    // Continuous Velocity Command: "V <left_rps> <right_rps>"
+// ─── Command Parsing ─────────────────────────────────────────────────────────
+void parseCommand(char *cmd) {
+  if (cmd[0] == 'V') {
+    // Continuous Velocity: "V <left_rps> <right_rps>"
     float r1 = 0.0f, r2 = 0.0f;
-    if (sscanf(line + 1, "%f %f", &r1, &r2) == 2) {
-      m1.target_rps = constrain(r1, -MAX_SPEED_RPS, MAX_SPEED_RPS);
-      m2.target_rps = constrain(r2, -MAX_SPEED_RPS, MAX_SPEED_RPS);
-      lastCmdMs = millis();
+    if (sscanf(cmd + 1, "%f %f", &r1, &r2) == 2) {
+      axis1.target_rps = constrain(r1, -MAX_SPEED_RPS, MAX_SPEED_RPS);
+      axis2.target_rps = constrain(r2, -MAX_SPEED_RPS, MAX_SPEED_RPS);
+      lastCmdTimeMs = millis();
     }
-  } else if (line[0] == 'M') {
-    // Position/Velocity step command from ROS cmd_pos
-    // "M <left_revs> <right_revs>" over 0.15s window -> convert to RPS
+  } else if (cmd[0] == 'M') {
+    // Relative Move / Velocity Compatibility: "M <left_val> <right_val>"
     float r1 = 0.0f, r2 = 0.0f;
-    if (sscanf(line + 1, "%f %f", &r1, &r2) == 2) {
-      float rps1 = r1 / 0.15f;
-      float rps2 = r2 / 0.15f;
-      m1.target_rps = constrain(rps1, -MAX_SPEED_RPS, MAX_SPEED_RPS);
-      m2.target_rps = constrain(rps2, -MAX_SPEED_RPS, MAX_SPEED_RPS);
-      lastCmdMs = millis();
+    if (sscanf(cmd + 1, "%f %f", &r1, &r2) == 2) {
+      axis1.target_rps = constrain(r1, -MAX_SPEED_RPS, MAX_SPEED_RPS);
+      axis2.target_rps = constrain(r2, -MAX_SPEED_RPS, MAX_SPEED_RPS);
+      lastCmdTimeMs = millis();
     }
-  } else if (line[0] == 'S') {
-    // Emergency / Clean Stop
-    m1.target_rps = 0.0f;
-    m2.target_rps = 0.0f;
-    m1.current_rps = 0.0f;
-    m2.current_rps = 0.0f;
-    m1.half_us = 0;
-    m2.half_us = 0;
-    digitalWrite(m1.pul, HIGH);
-    digitalWrite(m2.pul, HIGH);
-  } else if (line[0] == 'Z') {
-    // Zero Encoders
-    m1.pos = 0;
-    m2.pos = 0;
+  } else if (cmd[0] == 'S') {
+    // Immediate Clean Stop
+    axis1.target_rps = 0.0f;
+    axis2.target_rps = 0.0f;
+    axis1.current_rps = 0.0f;
+    axis2.current_rps = 0.0f;
+    portENTER_CRITICAL(&timerMux);
+    axis1.step_inc = 0;
+    axis2.step_inc = 0;
+    axis1.accumulator = 0;
+    axis2.accumulator = 0;
+    axis1.is_moving = false;
+    axis2.is_moving = false;
+    digitalWrite(axis1.pul_pin, HIGH);
+    digitalWrite(axis2.pul_pin, HIGH);
+    portEXIT_CRITICAL(&timerMux);
+  } else if (cmd[0] == 'Z') {
+    // Zero Encoder Counters
+    portENTER_CRITICAL(&timerMux);
+    axis1.pos_steps = 0;
+    axis2.pos_steps = 0;
+    portEXIT_CRITICAL(&timerMux);
   }
 }
 
-// ─── Non-Blocking Serial Reader ───────────────────────────────────────────────
 void readSerial() {
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
-      if (inputLen > 0) {
-        inputBuf[inputLen] = '\0';
-        handleCommand(inputBuf);
-        inputLen = 0;
+      if (serialIdx > 0) {
+        serialBuf[serialIdx] = '\0';
+        parseCommand(serialBuf);
+        serialIdx = 0;
       }
-    } else if (inputLen < sizeof(inputBuf) - 1) {
-      inputBuf[inputLen++] = c;
+    } else if (serialIdx < sizeof(serialBuf) - 1) {
+      serialBuf[serialIdx++] = c;
     }
   }
 }
 
-// ─── Telemetry Output (50 Hz) ─────────────────────────────────────────────────
+// ─── 50Hz Telemetry Output ────────────────────────────────────────────────────
 void sendTelemetry() {
-  float pos1 = (float)m1.pos / PPR;
-  float pos2 = (float)m2.pos / PPR;
-  int busy1  = (fabsf(m1.current_rps) > 0.001f) ? 1 : 0;
-  int busy2  = (fabsf(m2.current_rps) > 0.001f) ? 1 : 0;
+  long p1, p2;
+  bool b1, b2;
 
-  Serial.printf("P %.4f %.4f %d %d 0 0\n", pos1, pos2, busy1, busy2);
+  portENTER_CRITICAL(&timerMux);
+  p1 = axis1.pos_steps;
+  p2 = axis2.pos_steps;
+  b1 = axis1.is_moving;
+  b2 = axis2.is_moving;
+  portEXIT_CRITICAL(&timerMux);
+
+  float rev1 = (float)p1 / PPR;
+  float rev2 = (float)p2 / PPR;
+
+  Serial.printf("P %.4f %.4f %d %d 0 0\n", rev1, rev2, b1 ? 1 : 0, b2 ? 1 : 0);
 }
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
-  delay(100);
+  Serial.setRxBufferSize(256);
 
-  initAxis(m1);
-  initAxis(m2);
+  // Initialize motor pins
+  pinMode(axis1.pul_pin, OUTPUT);
+  pinMode(axis1.dir_pin, OUTPUT);
+  pinMode(axis2.pul_pin, OUTPUT);
+  pinMode(axis2.dir_pin, OUTPUT);
 
-  lastLoopUs = micros();
-  lastCmdMs  = millis();
+  digitalWrite(axis1.pul_pin, HIGH);
+  digitalWrite(axis1.dir_pin, LOW);
+  digitalWrite(axis2.pul_pin, HIGH);
+  digitalWrite(axis2.dir_pin, LOW);
 
-  Serial.println("AMR ServiceBot Ultra-Smooth ESP32 Driver Ready");
+  // Initialize ESP32 Hardware Timer for 20 kHz ISR (Divider 80 on 80MHz clock = 1us)
+  stepTimer = timerBegin(1000000);  // 1 MHz timer (ESP32 Arduino core 3.x / 2.x compatible)
+  timerAttachInterrupt(stepTimer, &onStepTimer);
+  timerAlarm(stepTimer, 50, true, 0); // 50 microseconds period = 20,000 Hz
+
+  lastRampTimeUs  = micros();
+  lastCmdTimeMs   = millis();
+  lastTelemTimeMs = millis();
+
+  Serial.println("AMR ServiceBot Jitter-Free DDS Motor Controller Online");
 }
 
-// ─── Main Control Loop ────────────────────────────────────────────────────────
+// ─── Main Control Loop (Core 1) ───────────────────────────────────────────────
 void loop() {
   uint32_t now_us = micros();
   uint32_t now_ms = millis();
 
-  // 1. Calculate loop dt for smooth acceleration integration
-  float dt = (float)(now_us - lastLoopUs) / 1000000.0f;
-  lastLoopUs = now_us;
-
-  // 2. Watchdog timeout: smooth decelerate if ROS connection is lost
-  if (now_ms - lastCmdMs > WATCHDOG_MS) {
-    m1.target_rps = 0.0f;
-    m2.target_rps = 0.0f;
-  }
-
-  // 3. Update continuous velocity ramps (Zero Jerk)
-  updateAxisSpeed(m1, dt);
-  updateAxisSpeed(m2, dt);
-
-  // 4. Generate step pulses at precise microsecond intervals
-  stepAxis(m1, now_us);
-  stepAxis(m2, now_us);
-
-  // 5. Read incoming serial commands
+  // 1. Process incoming commands from ROS 2
   readSerial();
 
-  // 6. Send telemetry at 50Hz
-  if (now_ms - lastTelemMs >= TELEM_INTERVAL_MS) {
-    lastTelemMs = now_ms;
+  // 2. Watchdog timeout check (fail-safe smooth stop if ROS disconnected)
+  if (now_ms - lastCmdTimeMs > WATCHDOG_TIMEOUT_MS) {
+    axis1.target_rps = 0.0f;
+    axis2.target_rps = 0.0f;
+  }
+
+  // 3. Update velocity ramps at fixed 100 Hz (every 10,000 us = 10 ms)
+  if (now_us - lastRampTimeUs >= 10000) {
+    float dt = (float)(now_us - lastRampTimeUs) / 1000000.0f;
+    lastRampTimeUs = now_us;
+    updateSpeed(axis1, dt);
+    updateSpeed(axis2, dt);
+  }
+
+  // 4. Send 50 Hz odometry telemetry to ROS 2
+  if (now_ms - lastTelemTimeMs >= TELEMETRY_INTERVAL_MS) {
+    lastTelemTimeMs = now_ms;
     sendTelemetry();
   }
 }

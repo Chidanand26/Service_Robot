@@ -1,16 +1,15 @@
 /*
   =============================================================================
-  AMR ServiceBot — Industrial Jitter-Free DDS Motor Controller Firmware (ESP32)
+  AMR ServiceBot — Universal Jitter-Free DDS Motor Controller Firmware (ESP32)
   =============================================================================
   Hardware: 
     - 2× CS-D508 Closed-Loop Stepper Drives (800 usteps × 5:1 gearbox = 4000 PPR)
-    - ESP32 Dual-Core @ 240 MHz
-    - MPU6050 6-DOF IMU (I2C SDA=21, SCL=22)
+    - ESP32 Dual-Core @ 240 MHz (Compatible with Arduino ESP32 Core 2.x & 3.x)
 
   Architecture:
-    - HARDWARE TIMER ISR @ 20,000 Hz (50us tick):
-        Direct Digital Synthesis (DDS) phase-accumulator step pulse engine.
-        Nanosecond-accurate, zero phase jitter, immune to serial printing/delays.
+    - 20,000 Hz HARDWARE TIMER ISR (50us tick):
+        Direct Digital Synthesis (DDS) phase-accumulator step pulse generator.
+        Nanosecond-accurate, zero phase jitter, completely immune to serial delays.
     - CORE 1 LOOP:
         High-speed non-blocking serial command parser ("V <left_rps> <right_rps>\n").
         Watchdog failsafe: smoothly halts if serial stream drops for > 400ms.
@@ -23,7 +22,6 @@
 */
 
 #include <Arduino.h>
-#include <Wire.h>
 
 // ─── Motor Hardware Pinout ───────────────────────────────────────────────────
 #define M1_PUL 25
@@ -40,12 +38,12 @@ const float PPR = 4000.0f;
 #define DDS_SCALE     1000000UL  // Fixed-point scaling for phase accumulator
 
 // Speed & Acceleration Limits (in wheel revolutions / second)
-const float MAX_SPEED_RPS  = 1.50f;  // ~0.75 m/s with 80mm wheels
+const float MAX_SPEED_RPS  = 1.50f;  // ~0.75 m/s max velocity
 const float MAX_ACCEL_RPS2 = 0.80f;  // ~0.40 m/s² max hardware acceleration
 
 // Watchdog & Telemetry Intervals
-const uint32_t WATCHDOG_TIMEOUT_MS = 400; // Auto-stop if no serial for 400ms
-const uint32_t TELEMETRY_INTERVAL_MS = 20; // 50 Hz ROS telemetry
+const uint32_t WATCHDOG_TIMEOUT_MS  = 400; // Auto-stop if no serial for 400ms
+const uint32_t TELEMETRY_INTERVAL_MS = 20;  // 50 Hz ROS telemetry
 
 // ─── DDS Stepper Engine State (Volatiles accessed in Timer ISR) ───────────────
 struct DDSAxis {
@@ -78,7 +76,11 @@ hw_timer_t *stepTimer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 // ─── Hardware Timer ISR (Runs strictly every 50us @ 20kHz) ───────────────────
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
 void IRAM_ATTR onStepTimer() {
+#else
+void IRAM_ATTR onStepTimer() {
+#endif
   portENTER_CRITICAL_ISR(&timerMux);
 
   // ── Axis 1 (Left Wheel) ──
@@ -86,10 +88,8 @@ void IRAM_ATTR onStepTimer() {
     axis1.accumulator += axis1.step_inc;
     if (axis1.accumulator >= DDS_SCALE) {
       axis1.accumulator -= DDS_SCALE;
-      // Generate sharp, clean step pulse
       digitalWrite(axis1.pul_pin, LOW);
       axis1.pos_steps += axis1.direction;
-      // Pulse high (CS-D508 optocoupler latch)
       digitalWrite(axis1.pul_pin, HIGH);
     }
   }
@@ -99,10 +99,8 @@ void IRAM_ATTR onStepTimer() {
     axis2.accumulator += axis2.step_inc;
     if (axis2.accumulator >= DDS_SCALE) {
       axis2.accumulator -= DDS_SCALE;
-      // Generate sharp, clean step pulse
       digitalWrite(axis2.pul_pin, LOW);
       axis2.pos_steps += axis2.direction;
-      // Pulse high (CS-D508 optocoupler latch)
       digitalWrite(axis2.pul_pin, HIGH);
     }
   }
@@ -146,7 +144,7 @@ void updateSpeed(DDSAxis &a, float dt) {
   // Calculate step frequency: steps_per_sec = |current_rps| * PPR
   float steps_per_sec = fabsf(a.current_rps) * PPR;
   if (steps_per_sec > (float)TIMER_FREQ_HZ) {
-    steps_per_sec = (float)TIMER_FREQ_HZ; // Clamp to Nyquist limit
+    steps_per_sec = (float)TIMER_FREQ_HZ;
   }
 
   // DDS Phase increment per tick: inc = (steps_per_sec / TIMER_FREQ_HZ) * DDS_SCALE
@@ -176,7 +174,7 @@ void parseCommand(char *cmd) {
       lastCmdTimeMs = millis();
     }
   } else if (cmd[0] == 'M') {
-    // Relative Move / Velocity Compatibility: "M <left_val> <right_val>"
+    // Legacy / Position compatibility mode
     float r1 = 0.0f, r2 = 0.0f;
     if (sscanf(cmd + 1, "%f %f", &r1, &r2) == 2) {
       axis1.target_rps = constrain(r1, -MAX_SPEED_RPS, MAX_SPEED_RPS);
@@ -257,16 +255,23 @@ void setup() {
   digitalWrite(axis2.pul_pin, HIGH);
   digitalWrite(axis2.dir_pin, LOW);
 
-  // Initialize ESP32 Hardware Timer for 20 kHz ISR (Divider 80 on 80MHz clock = 1us)
-  stepTimer = timerBegin(1000000);  // 1 MHz timer (ESP32 Arduino core 3.x / 2.x compatible)
+  // Universal ESP32 Timer Init (Compatible with Core 2.x and Core 3.x)
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
+  stepTimer = timerBegin(1000000);  // 1 MHz base clock
   timerAttachInterrupt(stepTimer, &onStepTimer);
-  timerAlarm(stepTimer, 50, true, 0); // 50 microseconds period = 20,000 Hz
+  timerAlarm(stepTimer, 50, true, 0); // 50us period = 20,000 Hz
+#else
+  stepTimer = timerBegin(0, 80, true); // Timer 0, prescaler 80 (1us tick)
+  timerAttachInterrupt(stepTimer, &onStepTimer, true);
+  timerAlarmWrite(stepTimer, 50, true); // 50us alarm
+  timerAlarmEnable(stepTimer);
+#endif
 
   lastRampTimeUs  = micros();
   lastCmdTimeMs   = millis();
   lastTelemTimeMs = millis();
 
-  Serial.println("AMR ServiceBot Jitter-Free DDS Motor Controller Online");
+  Serial.println("AMR ServiceBot DDS Controller Ready");
 }
 
 // ─── Main Control Loop (Core 1) ───────────────────────────────────────────────

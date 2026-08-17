@@ -25,11 +25,43 @@ from launch_ros.events.lifecycle import ChangeState
 from lifecycle_msgs.msg import Transition
 
 
+def resolve_ports():
+    if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
+        return '/dev/rplidar', '/dev/esp32'
+    try:
+        import glob, serial
+        ports = sorted(glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*'))
+        lidar_p, esp_p = None, None
+        for p in ports:
+            try:
+                s = serial.Serial(p, 115200, timeout=0.3)
+                s.write(b'\xa5\x52')
+                resp = s.read(6)
+                s.close()
+                if len(resp) >= 2 and resp[0] == 0xA5 and resp[1] == 0x5A:
+                    lidar_p = p
+                else:
+                    esp_p = p
+            except Exception:
+                pass
+        if lidar_p and not esp_p:
+            rem = [x for x in ports if x != lidar_p]
+            if rem: esp_p = rem[0]
+        elif esp_p and not lidar_p:
+            rem = [x for x in ports if x != esp_p]
+            if rem: lidar_p = rem[0]
+        return lidar_p or '/dev/ttyUSB0', esp_p or '/dev/ttyUSB1'
+    except Exception:
+        return '/dev/ttyUSB0', '/dev/ttyUSB1'
+
+
 def generate_launch_description():
     pkg_dir = get_package_share_directory('amr_assembly_description')
     urdf_file = os.path.join(pkg_dir, 'urdf', 'amr_assembly_description.urdf')
     rviz_file = os.path.join(pkg_dir, 'rviz', 'amr_assembly_description.rviz')
     slam_params_file = os.path.join(pkg_dir, 'config', 'mapper_params_online_async.yaml')
+
+    auto_lidar, auto_esp = resolve_ports()
 
     with open(urdf_file, 'r') as f:
         robot_description_config = f.read()
@@ -288,12 +320,12 @@ def generate_launch_description():
             description='ROS 2 namespace',
         ),
         DeclareLaunchArgument(
-            'serial_port', default_value='/dev/rplidar',
-            description='RPLiDAR serial port (permanent symlink via udev rules)',
+            'serial_port', default_value=auto_lidar,
+            description='RPLiDAR serial port (auto-detected fallback)',
         ),
         DeclareLaunchArgument(
-            'esp_port', default_value='/dev/esp32',
-            description='ESP32 serial port (permanent symlink via udev rules)',
+            'esp_port', default_value=auto_esp,
+            description='ESP32 serial port (auto-detected fallback)',
         ),
         DeclareLaunchArgument(
             'serial_baudrate', default_value='115200',

@@ -24,8 +24,8 @@ class TwistToWheelCmd(Node):
         super().__init__('twist_to_wheel_cmd')
 
         # Robot kinematic parameters
-        self.declare_parameter('wheel_radius', 0.080)       # 80mm radius
-        self.declare_parameter('wheel_separation', 0.427)   # 427mm track width
+        self.declare_parameter('wheel_radius', 0.070)       # 70mm radius
+        self.declare_parameter('wheel_separation', 0.370)   # 370mm track width
         self.declare_parameter('control_rate_hz', 50.0)     # 50 Hz control loop
 
         self.R = self.get_parameter('wheel_radius').value
@@ -44,14 +44,14 @@ class TwistToWheelCmd(Node):
         self.w_smooth = 0.0
         self.a_w = 0.0
 
-        # Motion limits — Fast & Smooth S-Curve Profile (Zero-lag, Zero-jerk)
+        # Motion limits — "Tea-Cup Safe" Ultra-Smooth Profile (Zero-jerk)
         # Linear motion limits
-        self.max_accel_v = 0.50   # m/s² max linear acceleration
-        self.max_jerk_v  = 2.50   # m/s³ max linear jerk (instant start, smooth curve)
+        self.max_accel_v = 0.25   # m/s² max linear acceleration
+        self.max_jerk_v  = 0.75   # m/s³ max linear jerk (limits rate of change of acceleration)
 
         # Angular motion limits
-        self.max_accel_w = 1.20   # rad/s² max angular acceleration
-        self.max_jerk_w  = 4.00   # rad/s³ max angular jerk
+        self.max_accel_w = 0.60   # rad/s² max angular acceleration
+        self.max_jerk_w  = 1.50   # rad/s³ max angular jerk
 
         self.last_timer_time = time.monotonic()
 
@@ -87,7 +87,7 @@ class TwistToWheelCmd(Node):
         # ─── S-Curve Linear Velocity Filter ────────────────────────────────────
         # Calculate desired acceleration toward target
         error_v = self.target_v - self.v_smooth
-        desired_a_v = error_v / 0.05  # Snappy 50ms time constant
+        desired_a_v = error_v / 0.12  # Time constant for exponential response
         desired_a_v = max(-self.max_accel_v, min(self.max_accel_v, desired_a_v))
 
         # Jerk-limit the acceleration change
@@ -106,7 +106,7 @@ class TwistToWheelCmd(Node):
 
         # ─── S-Curve Angular Velocity Filter ───────────────────────────────────
         error_w = self.target_w - self.w_smooth
-        desired_a_w = error_w / 0.05
+        desired_a_w = error_w / 0.10
         desired_a_w = max(-self.max_accel_w, min(self.max_accel_w, desired_a_w))
 
         da_w = desired_a_w - self.a_w

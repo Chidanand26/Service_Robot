@@ -16,7 +16,7 @@ from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDesc
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.actions import LifecycleNode, Node, PushRosNamespace
 
 
 def resolve_ports():
@@ -95,7 +95,7 @@ def generate_launch_description():
         package='amr_assembly_description',
         executable='twist_to_wheel_cmd.py',
         name='twist_to_wheel_cmd',
-        parameters=[{'wheel_radius': 0.080, 'wheel_separation': 0.427}],
+        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.370}],
         output='screen',
     )
 
@@ -144,7 +144,7 @@ def generate_launch_description():
         package='amr_assembly_description',
         executable='sim_robot_odometry.py',
         name='sim_robot_odometry',
-        parameters=[{'wheel_radius': 0.080, 'wheel_separation': 0.427}],
+        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.370}],
         output='screen',
     )
 
@@ -197,8 +197,8 @@ def generate_launch_description():
             'udp_port': 8888,
             'joint_name_1': 'left_wheel_joint',
             'joint_name_2': 'right_wheel_joint',
-            'wheel_radius': 0.080,
-            'wheel_separation': 0.427,
+            'wheel_radius': 0.070,
+            'wheel_separation': 0.370,
             'publish_tf': True,
             'suppress_alarm_errors': True
         }],
@@ -215,8 +215,8 @@ def generate_launch_description():
             'baudrate':         115200,
             'joint_name_1':     'left_wheel_joint',
             'joint_name_2':     'right_wheel_joint',
-            'wheel_radius':     0.080,
-            'wheel_separation': 0.427,
+            'wheel_radius':     0.070,
+            'wheel_separation': 0.370,
             'publish_tf':       True,
             'suppress_alarm_errors': True,
         }],
@@ -251,21 +251,32 @@ def generate_launch_description():
     )
 
 
-    # 5. SLAM Toolbox (Clean launch using official online_async_launch)
-    slam_toolbox_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(
-                get_package_share_directory('slam_toolbox'),
-                'launch',
-                'online_async_launch.py'
-            )
-        ),
-        launch_arguments={
-            'slam_params_file': slam_params_file,
-            'use_sim_time': 'false',
-            'autostart': 'true',
-            'use_lifecycle_manager': 'false',
-        }.items(),
+    # 5. SLAM Toolbox (LifecycleNode + Nav2 Lifecycle Manager for 100% reliable startup)
+    start_async_slam_toolbox_node = LifecycleNode(
+        package='slam_toolbox',
+        executable='async_slam_toolbox_node',
+        name='slam_toolbox',
+        parameters=[
+            slam_params_file,
+            {
+                'use_lifecycle_manager': True,
+                'use_sim_time': False,
+            }
+        ],
+        output='screen',
+        namespace=''
+    )
+
+    slam_lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_slam',
+        parameters=[{
+            'use_sim_time': False,
+            'autostart': True,
+            'node_names': ['slam_toolbox']
+        }],
+        output='screen',
     )
 
     # 6. RViz2
@@ -325,7 +336,8 @@ def generate_launch_description():
             hardware_esp32_wifi_node,
             hardware_esp32_serial_node,
             realsense_camera_launch,
-            slam_toolbox_launch,
+            start_async_slam_toolbox_node,
+            slam_lifecycle_manager,
             rviz_node,
         ]),
     ]

@@ -83,10 +83,10 @@
       </geometry>
     </visual>
     <collision>
-      <!-- simplified: drive-wheel primitive (r=0.080, w=0.050, axis=+Y local) -->
+      <!-- simplified: drive-wheel primitive (r=0.070, w=0.050, axis=+Y local) -->
       <origin xyz="0 0 0" rpy="1.5707963 0 0" />
       <geometry>
-        <cylinder radius="0.080" length="0.050" />
+        <cylinder radius="0.070" length="0.050" />
       </geometry>
     </collision>
     <inertial>
@@ -97,7 +97,7 @@
   </link>
 
   <joint name="left_wheel_joint" type="continuous">
-    <origin xyz="0 0.2135 0.025" rpy="0 0 3.14159265359" />
+    <origin xyz="0 0.185 0.015" rpy="0 0 3.14159265359" />
     <parent link="base_link" />
     <child link="left_wheel" />
     <axis xyz="0 -1 0" />
@@ -113,10 +113,10 @@
       </geometry>
     </visual>
     <collision>
-      <!-- simplified: drive-wheel primitive (r=0.080, w=0.050, axis=+Y local) -->
+      <!-- simplified: drive-wheel primitive (r=0.070, w=0.050, axis=+Y local) -->
       <origin xyz="0 0 0" rpy="1.5707963 0 0" />
       <geometry>
-        <cylinder radius="0.080" length="0.050" />
+        <cylinder radius="0.070" length="0.050" />
       </geometry>
     </collision>
     <inertial>
@@ -127,7 +127,7 @@
   </link>
 
   <joint name="right_wheel_joint" type="continuous">
-    <origin xyz="0 -0.2135 0.025" rpy="0 0 3.14159265359" />
+    <origin xyz="0 -0.185 0.015" rpy="0 0 3.14159265359" />
     <parent link="base_link" />
     <child link="right_wheel" />
     <axis xyz="0 -1 0" />

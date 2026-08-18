@@ -30,8 +30,8 @@ class ESP32WiFiDriver(Node):
         self.declare_parameter('esp32_ip', '10.78.37.133')
         self.declare_parameter('joint_name_1', 'left_wheel_joint')
         self.declare_parameter('joint_name_2', 'right_wheel_joint')
-        self.declare_parameter('wheel_radius', 0.080)       # 80mm radius
-        self.declare_parameter('wheel_separation', 0.427)   # 427mm baseline
+        self.declare_parameter('wheel_radius', 0.070)       # 70mm radius
+        self.declare_parameter('wheel_separation', 0.370)   # 370mm baseline
         self.declare_parameter('publish_tf', True)
         self.declare_parameter('suppress_alarm_errors', True)
 

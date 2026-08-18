@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
 SLAM Toolbox Lifecycle Auto-Starter
-Guarantees slam_toolbox transitions unconfigured -> inactive -> active on ROS 2 Jazzy.
+Cleanly transitions slam_toolbox to active and stops immediately once active.
 """
 
-import time
 import rclpy
 from rclpy.node import Node
 from lifecycle_msgs.srv import ChangeState, GetState
@@ -19,54 +18,52 @@ class SlamLifecycleAutoStarter(Node):
         self.change_state_client = self.create_client(ChangeState, '/slam_toolbox/change_state')
         self.get_state_client = self.create_client(GetState, '/slam_toolbox/get_state')
         
-        self.timer = self.create_timer(0.5, self._manage_lifecycle)
-        self.step = 0
-        self.retries = 0
+        self.timer = self.create_timer(0.5, self._check_and_transition)
+        self.in_progress = False
 
-    def _manage_lifecycle(self):
-        if not self.change_state_client.wait_for_service(timeout_sec=0.2):
-            self.retries += 1
-            if self.retries % 6 == 0:
-                self.get_logger().info('Waiting for /slam_toolbox service to become available...')
+    def _check_and_transition(self):
+        if self.in_progress:
             return
 
-        if self.step == 0:
-            req = ChangeState.Request()
-            req.transition.id = Transition.TRANSITION_CONFIGURE
-            future = self.change_state_client.call_async(req)
-            future.add_done_callback(self._configure_done)
-            self.step = 1
-            self.get_logger().info('Sent TRANSITION_CONFIGURE to /slam_toolbox')
+        if not self.get_state_client.wait_for_service(timeout_sec=0.2):
+            return
 
-    def _configure_done(self, future):
+        self.in_progress = True
+        future = self.get_state_client.call_async(GetState.Request())
+        future.add_done_callback(self._on_get_state)
+
+    def _on_get_state(self, future):
         try:
-            res = future.result()
-            if res.success:
-                self.get_logger().info('SLAM Toolbox configured successfully (now INACTIVE). Activating...')
-                time.sleep(0.3)
+            state = future.result().current_state.label
+            if state == 'active':
+                self.get_logger().info('✅ SLAM Toolbox is ACTIVE! Occupancy grid /map and TF map->odom are live.')
+                self.timer.cancel()
+                self.in_progress = False
+                return
+
+            if state == 'unconfigured':
+                self.get_logger().info('SLAM Toolbox is UNCONFIGURED. Sending TRANSITION_CONFIGURE...')
+                req = ChangeState.Request()
+                req.transition.id = Transition.TRANSITION_CONFIGURE
+                fut = self.change_state_client.call_async(req)
+                fut.add_done_callback(lambda f: self._set_in_progress(False))
+                return
+
+            if state == 'inactive':
+                self.get_logger().info('SLAM Toolbox is INACTIVE. Sending TRANSITION_ACTIVATE...')
                 req = ChangeState.Request()
                 req.transition.id = Transition.TRANSITION_ACTIVATE
-                future_act = self.change_state_client.call_async(req)
-                future_act.add_done_callback(self._activate_done)
-            else:
-                self.get_logger().warn('Failed to configure SLAM Toolbox. Retrying...')
-                self.step = 0
-        except Exception as e:
-            self.get_logger().error(f'Configure error: {e}')
-            self.step = 0
+                fut = self.change_state_client.call_async(req)
+                fut.add_done_callback(lambda f: self._set_in_progress(False))
+                return
 
-    def _activate_done(self, future):
-        try:
-            res = future.result()
-            if res.success:
-                self.get_logger().info('✅ SLAM Toolbox is now ACTIVE! /map is publishing and TF map->odom is live.')
-                self.timer.cancel()
-            else:
-                self.get_logger().warn('Failed to activate SLAM Toolbox. Retrying...')
-                self.step = 0
         except Exception as e:
-            self.get_logger().error(f'Activate error: {e}')
-            self.step = 0
+            self.get_logger().error(f'State query error: {e}')
+        
+        self.in_progress = False
+
+    def _set_in_progress(self, val):
+        self.in_progress = val
 
 
 def main(args=None):

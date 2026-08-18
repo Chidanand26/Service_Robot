@@ -27,31 +27,12 @@ from launch_ros.substitutions import FindPackageShare
 def resolve_ports():
     if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
         return '/dev/rplidar', '/dev/esp32'
-    try:
-        import glob, serial
-        ports = sorted(glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*'))
-        lidar_p, esp_p = None, None
-        for p in ports:
-            try:
-                s = serial.Serial(p, 115200, timeout=0.3)
-                s.write(b'\xa5\x52')
-                resp = s.read(6)
-                s.close()
-                if len(resp) >= 2 and resp[0] == 0xA5 and resp[1] == 0x5A:
-                    lidar_p = p
-                else:
-                    esp_p = p
-            except Exception:
-                pass
-        if lidar_p and not esp_p:
-            rem = [x for x in ports if x != lidar_p]
-            if rem: esp_p = rem[0]
-        elif esp_p and not lidar_p:
-            rem = [x for x in ports if x != esp_p]
-            if rem: lidar_p = rem[0]
-        return lidar_p or '/dev/ttyUSB0', esp_p or '/dev/ttyUSB1'
-    except Exception:
-        return '/dev/ttyUSB0', '/dev/ttyUSB1'
+    if os.path.exists('/dev/rplidar'):
+        return '/dev/rplidar', '/dev/ttyUSB0'
+    if os.path.exists('/dev/esp32'):
+        return '/dev/ttyUSB1', '/dev/esp32'
+    return '/dev/rplidar', '/dev/esp32'
+
 
 
 def generate_launch_description():
@@ -90,14 +71,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 2. Caster Joint State Publisher
-    caster_joint_state_publisher_node = Node(
-        package='amr_assembly_description',
-        executable='dummy_joint_state_publisher.py',
-        name='caster_joint_state_publisher',
-        output='screen',
-    )
-
     # 3. 50Hz S-Curve Jerk-Limited Motion Controller
     twist_to_wheel_cmd_node = Node(
         package='amr_assembly_description',
@@ -131,10 +104,10 @@ def generate_launch_description():
         parameters=[{
             'axis_linear.x': 1,
             'axis_angular.yaw': 0,
-            'scale_linear.x': 0.25,
-            'scale_angular.yaw': 0.60,
-            'scale_linear_turbo.x': 0.45,
-            'scale_angular_turbo.yaw': 1.0,
+            'scale_linear.x': -0.25,  # Inverted: Push Up -> Forward (+0.25 m/s)
+            'scale_angular.yaw': -0.60, # Inverted: Push Left -> Turn Left (-0.60 rad/s)
+            'scale_linear_turbo.x': -0.45,  # Inverted Turbo: Push Up -> Forward (+0.45 m/s)
+            'scale_angular_turbo.yaw': -1.0, # Inverted Turbo: Push Left -> Turn Left (-1.00 rad/s)
             'enable_button': 4,
             'enable_turbo_button': 5,
             'require_enable_button': True,
@@ -154,8 +127,6 @@ def generate_launch_description():
             'frame_id': 'laser_frame',
             'inverted': False,
             'angle_compensate': True,
-            'scan_mode': 'Sensitivity',
-            'auto_reconnect': True,
         }],
         output='screen',
     )
@@ -242,7 +213,6 @@ def generate_launch_description():
         GroupAction([
             PushRosNamespace(ns),
             robot_state_publisher_node,
-            caster_joint_state_publisher_node,
             twist_to_wheel_cmd_node,
             joy_node,
             teleop_twist_joy_node,

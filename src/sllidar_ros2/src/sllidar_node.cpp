@@ -290,9 +290,18 @@ public:
             return -1;
         }
         
+        // Reset any existing scan stream from previous runs
+        drv->stop();
+        usleep(50000);
+        
         // get sllidar device info
         if (!getSLLIDARDeviceInfo(drv)) {
-            return -1;
+            // retry once after stop
+            drv->stop();
+            usleep(100000);
+            if (!getSLLIDARDeviceInfo(drv)) {
+                return -1;
+            }
         }
 
         // check health...
@@ -324,17 +333,18 @@ public:
                 }
 
                 if (selectedScanMode == sl_u16(-1)) {
-                    RCLCPP_ERROR(this->get_logger(),"scan mode `%s' is not supported by lidar, supported modes:", scan_mode.c_str());
-                    for (std::vector<LidarScanMode>::iterator iter = allSupportedScanModes.begin(); iter != allSupportedScanModes.end(); iter++) {
-                        RCLCPP_ERROR(this->get_logger(),"\t%s: max_distance: %.1f m, Point number: %.1fK",  iter->scan_mode,
-                                iter->max_distance, (1000/iter->us_per_sample));
-                    }
-                    op_result = SL_RESULT_OPERATION_FAIL;
+                    RCLCPP_WARN(this->get_logger(),"scan mode `%s' not directly matched, falling back to typical scan mode.", scan_mode.c_str());
+                    op_result = drv->startScan(false, true, 0, &current_scan_mode);
                 } else {
                     op_result = drv->startScanExpress(false /* not force scan */, selectedScanMode, 0, &current_scan_mode);
                 }
             }
         }
+
+        if (!SL_IS_OK(op_result)) {
+            op_result = drv->startScan(false, false, 0, &current_scan_mode);
+        }
+
 
         if(SL_IS_OK(op_result))
         {

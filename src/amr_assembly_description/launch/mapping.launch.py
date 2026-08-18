@@ -27,30 +27,37 @@ def resolve_ports():
     if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
         return '/dev/rplidar', '/dev/esp32'
     try:
-        import glob, serial
+        import glob, serial, time
         ports = sorted(glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*'))
-        lidar_p, esp_p = None, None
+        if not ports:
+            return '/dev/ttyUSB1', '/dev/ttyUSB0'
+        if len(ports) == 1:
+            return ports[0], ports[0]
+        
+        esp_port = None
+        lidar_port = None
         for p in ports:
             try:
                 s = serial.Serial(p, 115200, timeout=0.3)
-                s.write(b'\xa5\x52')
-                resp = s.read(6)
+                s.reset_input_buffer()
+                s.write(b'V 0.0 0.0\n')
+                time.sleep(0.15)
+                buf = s.read(s.in_waiting or 100).decode('utf-8', errors='ignore')
                 s.close()
-                if len(resp) >= 2 and resp[0] == 0xA5 and resp[1] == 0x5A:
-                    lidar_p = p
-                else:
-                    esp_p = p
+                if 'P ' in buf:
+                    esp_port = p
             except Exception:
                 pass
-        if lidar_p and not esp_p:
-            rem = [x for x in ports if x != lidar_p]
-            if rem: esp_p = rem[0]
-        elif esp_p and not lidar_p:
-            rem = [x for x in ports if x != esp_p]
-            if rem: lidar_p = rem[0]
-        return lidar_p or '/dev/ttyUSB0', esp_p or '/dev/ttyUSB1'
+        
+        if esp_port:
+            other_ports = [p for p in ports if p != esp_port]
+            lidar_port = other_ports[0] if other_ports else '/dev/ttyUSB1'
+            return lidar_port, esp_port
+        
+        return '/dev/ttyUSB1', '/dev/ttyUSB0'
     except Exception:
-        return '/dev/ttyUSB0', '/dev/ttyUSB1'
+        return '/dev/ttyUSB1', '/dev/ttyUSB0'
+
 
 
 def generate_launch_description():
@@ -83,17 +90,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 1b. Caster Joint State Publisher
-    # The 4 caster wheels are fixed/passive - no motor drives them.
-    # robot_state_publisher requires ALL non-fixed joints to be published
-    # or it logs errors. We publish 0.0 for all passive joints here.
-    caster_joint_state_publisher_node = Node(
-        package='amr_assembly_description',
-        executable='dummy_joint_state_publisher.py',
-        name='caster_joint_state_publisher',
-        output='screen',
-    )
-
     # 2. Twist to Wheel Command Converter (/cmd_vel -> /cmd_pos)
     twist_to_wheel_cmd_node = Node(
         package='amr_assembly_description',
@@ -108,7 +104,7 @@ def generate_launch_description():
     #    teleop_twist_joy converts Joy → geometry_msgs/Twist on /cmd_vel
     #
     #    PS5 DualSense Button Mapping:
-    #      Left Stick Y (axis 1)  → linear.x  (forward/backward)
+    #      Left Stick Y (axis 1)  → linear.x  (inverted to match hardware direction)
     #      Left Stick X (axis 0)  → angular.z (turn left/right)
     #      L1 (button 4)          → enable button (HOLD to drive)
     #      R1 (button 5)          → turbo button (faster speed)
@@ -131,10 +127,10 @@ def generate_launch_description():
         parameters=[{
             'axis_linear.x':  1,       # Left stick Y axis
             'axis_angular.yaw': 0,     # Left stick X axis
-            'scale_linear.x':  0.25,   # Normal speed: 0.25 m/s (ultra-smooth tea-safe)
-            'scale_angular.yaw': 0.60, # Normal turn:  0.60 rad/s (gentle turning)
-            'scale_linear_turbo.x': 0.45,   # Turbo speed: 0.45 m/s
-            'scale_angular_turbo.yaw': 1.0, # Turbo turn:  1.00 rad/s
+            'scale_linear.x':  -0.25,  # Inverted: Push Up -> Forward (+0.25 m/s)
+            'scale_angular.yaw': -0.60, # Inverted: Push Left -> Turn Left (-0.60 rad/s)
+            'scale_linear_turbo.x': -0.45,   # Inverted Turbo: Push Up -> Forward (+0.45 m/s)
+            'scale_angular_turbo.yaw': -1.0,  # Inverted Turbo: Push Left -> Turn Left (-1.00 rad/s)
             'enable_button': 4,        # L1 = enable (hold to drive)
             'enable_turbo_button': 5,  # R1 = turbo
             'require_enable_button': True,
@@ -187,7 +183,6 @@ def generate_launch_description():
             'frame_id': 'laser_frame',
             'inverted': False,
             'angle_compensate': True,
-            'scan_mode': 'Sensitivity',
         }],
         output='screen',
     )
@@ -255,8 +250,8 @@ def generate_launch_description():
     )
 
 
-    # 5. SLAM Toolbox (Official launch with delayed auto-start to avoid race condition)
-    slam_toolbox_node = LifecycleNode(
+    # 5. SLAM Toolbox (Clean Auto-Start)
+    slam_toolbox_node = Node(
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
         name='slam_toolbox',
@@ -265,39 +260,10 @@ def generate_launch_description():
             {
                 'use_lifecycle_manager': False,
                 'use_sim_time': False,
+                'autostart': True,
             }
         ],
         output='screen',
-        namespace=''
-    )
-
-    # Delayed CONFIGURE event — give slam_toolbox 3 seconds to start before configuring
-    delayed_configure = TimerAction(
-        period=3.0,
-        actions=[
-            EmitEvent(
-                event=ChangeState(
-                    lifecycle_node_matcher=matches_action(slam_toolbox_node),
-                    transition_id=Transition.TRANSITION_CONFIGURE,
-                ),
-            ),
-        ],
-    )
-
-    # Auto-ACTIVATE after successful CONFIGURE
-    auto_activate = RegisterEventHandler(
-        OnStateTransition(
-            target_lifecycle_node=slam_toolbox_node,
-            goal_state='inactive',
-            entities=[
-                EmitEvent(
-                    event=ChangeState(
-                        lifecycle_node_matcher=matches_action(slam_toolbox_node),
-                        transition_id=Transition.TRANSITION_ACTIVATE,
-                    ),
-                ),
-            ],
-        ),
     )
 
     # 6. RViz2
@@ -346,7 +312,6 @@ def generate_launch_description():
         GroupAction([
             PushRosNamespace(ns),
             robot_state_publisher_node,
-            caster_joint_state_publisher_node,
             twist_to_wheel_cmd_node,
             joy_node,
             teleop_twist_joy_node,
@@ -358,8 +323,6 @@ def generate_launch_description():
             hardware_esp32_serial_node,
             realsense_camera_launch,
             slam_toolbox_node,
-            delayed_configure,
-            auto_activate,
             rviz_node,
         ]),
     ]

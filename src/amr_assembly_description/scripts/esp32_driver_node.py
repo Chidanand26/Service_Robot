@@ -245,6 +245,16 @@ class ESP32SerialDriver(Node):
         t.transform.rotation.w    = math.cos(self.theta / 2.0)
         self.tf_broadcaster.sendTransform(t)
 
+        if self.prev_pos1_rev is None:
+            js = JointState()
+            js.header.stamp = t.header.stamp
+            js.name         = [self.j1_name, self.j2_name]
+            js.position     = [0.0, 0.0]
+            js.velocity     = [0.0, 0.0]
+            js.effort       = [0.0, 0.0]
+            self.joint_pub.publish(js)
+
+
 
 def main(args=None):
     rclpy.init(args=args)

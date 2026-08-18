@@ -183,6 +183,8 @@ def generate_launch_description():
             'frame_id': 'laser_frame',
             'inverted': False,
             'angle_compensate': True,
+            'auto_reconnect': True,
+            'scan_mode': 'Standard',
         }],
         output='screen',
     )
@@ -250,7 +252,7 @@ def generate_launch_description():
     )
 
 
-    # 5. SLAM Toolbox (Clean Auto-Start)
+    # 5. SLAM Toolbox
     slam_toolbox_node = Node(
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
@@ -260,9 +262,16 @@ def generate_launch_description():
             {
                 'use_lifecycle_manager': False,
                 'use_sim_time': False,
-                'autostart': True,
             }
         ],
+        output='screen',
+    )
+
+    # 5b. SLAM Lifecycle Auto-Starter
+    slam_lifecycle_starter_node = Node(
+        package='amr_assembly_description',
+        executable='slam_lifecycle_auto_starter.py',
+        name='slam_lifecycle_auto_starter',
         output='screen',
     )
 
@@ -323,6 +332,7 @@ def generate_launch_description():
             hardware_esp32_serial_node,
             realsense_camera_launch,
             slam_toolbox_node,
+            slam_lifecycle_starter_node,
             rviz_node,
         ]),
     ]

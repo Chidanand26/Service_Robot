@@ -11,6 +11,7 @@ install(PROGRAMS
   scripts/dummy_laser_scan_publisher.py
   scripts/twist_to_wheel_cmd.py
   scripts/sim_robot_odometry.py
+  scripts/slam_lifecycle_auto_starter.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()

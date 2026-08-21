@@ -43,6 +43,14 @@ amcl:
     z_rand: 0.5
     z_short: 0.05
     scan_topic: /scan
+    set_initial_pose: true
+    always_reset_initial_pose: false
+    first_map_only: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
 
 bt_navigator:
   ros__parameters:
@@ -51,8 +59,9 @@ bt_navigator:
     robot_base_frame: base_footprint
     odom_topic: /odom
     bt_loop_duration: 10
-    default_server_timeout: 20
-    wait_for_service_timeout: 1000
+    default_server_timeout: 40
+    wait_for_service_timeout: 5000
+    transform_tolerance: 0.5
     action_server_result_timeout: 900.0
     navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:
@@ -74,34 +83,34 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.25
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.05
+      movement_time_allowance: 15.0
 
     general_goal_checker:
-      stateful: true
+      stateful: false
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.15
+      xy_goal_tolerance: 0.10
+      yaw_goal_tolerance: 0.20
 
     # Regulated Pure Pursuit Controller — Ultra-smooth, corner-slowdown, zero jerk
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.25           # Tea-safe cruising speed (m/s)
-      lookahead_dist: 0.6               # Lookahead distance (m)
-      min_lookahead_dist: 0.3
-      max_lookahead_dist: 0.9
-      lookahead_time: 1.5
+      lookahead_dist: 0.45              # Lookahead distance (m)
+      min_lookahead_dist: 0.20
+      max_lookahead_dist: 0.80
+      lookahead_time: 1.2
       rotate_to_heading_angular_vel: 0.40 # Gentle rotation in place (rad/s)
-      transform_tolerance: 0.2
+      transform_tolerance: 0.5
       use_velocity_scaled_lookahead_dist: true
       min_approach_linear_vel: 0.05
-      approach_velocity_scaling_dist: 0.6
+      approach_velocity_scaling_dist: 0.40
       max_allowed_time_to_collision_up_to_fast_stop: 2.0
       use_collision_detection: true
       use_cost_regulated_linear_velocity_scaling: true
-      cost_scaling_dist: 0.6
+      cost_scaling_dist: 0.40
       cost_scaling_gain: 1.0
-      inflation_cost_scaling_factor: 3.0
+      inflation_cost_scaling_factor: 5.0
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.785
       max_angular_accel: 0.60
@@ -120,7 +129,8 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.28
+      robot_radius: 0.20
+      transform_tolerance: 0.5
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -138,8 +148,8 @@ local_costmap:
           obstacle_min_range: 0.15
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.50
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       always_send_full_costmap: true
 
 global_costmap:
@@ -150,9 +160,10 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: false
-      robot_radius: 0.28
+      robot_radius: 0.20
       resolution: 0.05
       track_unknown_space: true
+      transform_tolerance: 0.5
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -173,14 +184,14 @@ global_costmap:
           obstacle_min_range: 0.15
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.50
+        cost_scaling_factor: 5.0
+        inflation_radius: 0.35
       always_send_full_costmap: true
 
 map_server:
   ros__parameters:
     use_sim_time: false
-    yaml_filename: ""
+    yaml_filename: "/home/ar08/ros2_ws/src/amr_assembly_description/maps/service_room.yaml"
 
 planner_server:
   ros__parameters:
@@ -190,7 +201,7 @@ planner_server:
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.5
-      use_astar: false
+      use_astar: true
       allow_unknown: true
 
 behavior_server:
@@ -205,17 +216,18 @@ behavior_server:
       max_rotational_vel: 0.40
       min_rotational_vel: 0.10
       rotational_acc_lim: 0.40
+      time_allowance: 25.0
     backup:
       plugin: "nav2_behaviors::BackUp"
       backup_dist: 0.15
       backup_speed: 0.05
-      time_allowance: 10.0
+      time_allowance: 20.0
     wait:
       plugin: "nav2_behaviors::Wait"
-      wait_duration: 5.0
+      wait_duration: 3.0
     global_frame: odom
     robot_base_frame: base_footprint
-    transform_timeout: 0.2
+    transform_timeout: 0.5
     use_sim_time: false
     simulate_ahead_time: 2.0
 
@@ -232,4 +244,73 @@ waypoint_follower:
     wait_at_waypoint:
       plugin: "nav2_waypoint_follower::WaitAtWaypoint"
       enabled: true
-      waypoint_pause_duration: 3.0
+      waypoint_pause_duration: 3
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 20.0
+    stamp_smoothed_velocity_with_smoothing_time: false
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.25, 0.0, 0.60]
+    min_velocity: [-0.25, 0.0, -0.60]
+    max_accel: [0.25, 0.0, 0.60]
+    max_decel: [-0.25, 0.0, -0.60]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "cmd_vel_smoothed"
+    cmd_vel_out_topic: "cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.5
+    source_timeout: 2.0
+    base_shift_correction: true
+    stop_pub_timeout: 2.0
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "/local_costmap/published_footprint"
+      time_before_collision: 0.5
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: false
+      enabled: false
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: false
+
+docking_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 50.0
+    initial_perception_timeout: 5.0
+    wait_charge_timeout: 5.0
+    dock_approach_timeout: 30.0
+    undock_linear_tolerance: 0.05
+    undock_angular_tolerance: 0.1
+    max_retries: 3
+    base_frame: "base_footprint"
+    fixed_frame: "odom"
+    dock_backwards: false
+    dock_prestaging_tolerance: 0.5
+    dock_plugins: ['simple_charging_dock']
+    simple_charging_dock:
+      plugin: 'opennav_docking::SimpleChargingDock'
+      docking_threshold: 0.05
+      staging_x_offset: -0.7
+      use_external_detection_pose: true
+
+

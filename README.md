@@ -357,4 +357,12 @@ ros2 launch amr_assembly_description mapping.launch.py \
 
     ros2 launch amr_assembly_description mapping.launch.py use_esp32:=true
 
-
+pkill -9 -f "ros2|sllidar|esp32|twist_to_wheel|component_container|rviz"
+    rm -rf ~/.ros/log/*
+    
+ros2 launch amr_assembly_description navigation.launch.py \
+        use_esp32:=true \
+        serial_port:=/dev/ttyUSB0 \
+        esp_port:=/dev/ttyUSB1 \
+        map:=/home/ar08/ros2_ws/src/amr_assembly_description/maps/service_room.yaml \
+        enable_camera:=false

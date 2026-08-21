@@ -33,7 +33,7 @@ class ESP32SerialDriver(Node):
         super().__init__('esp32_serial_driver')
 
         # Parameters
-        self.declare_parameter('port',          '/dev/ttyUSB0')
+        self.declare_parameter('port',          '/dev/esp32')
         self.declare_parameter('baudrate',      115200)
         self.declare_parameter('joint_name_1',  'left_wheel_joint')
         self.declare_parameter('joint_name_2',  'right_wheel_joint')

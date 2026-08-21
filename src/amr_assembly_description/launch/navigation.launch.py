@@ -25,12 +25,9 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def resolve_ports():
+    """Return default port values. Override at launch via serial_port:= and esp_port:= args."""
     if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
         return '/dev/rplidar', '/dev/esp32'
-    if os.path.exists('/dev/rplidar'):
-        return '/dev/rplidar', '/dev/ttyUSB0'
-    if os.path.exists('/dev/esp32'):
-        return '/dev/ttyUSB1', '/dev/esp32'
     return '/dev/rplidar', '/dev/esp32'
 
 
@@ -186,7 +183,7 @@ def generate_launch_description():
             'params_file': params_file,
             'use_sim_time': 'false',
             'autostart': autostart,
-            'use_composition': 'True',
+            'use_composition': 'False',
         }.items(),
     )
 
@@ -210,16 +207,18 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_camera', default_value='false', description='Enable RealSense D435i camera'),
         DeclareLaunchArgument('autostart', default_value='true', description='Automatically startup Nav2 stack'),
 
-        GroupAction([
-            PushRosNamespace(ns),
-            robot_state_publisher_node,
-            twist_to_wheel_cmd_node,
-            joy_node,
-            teleop_twist_joy_node,
-            hardware_lidar_node,
-            hardware_esp32_serial_node,
-            realsense_camera_launch,
-            nav2_bringup_launch,
-            rviz_node,
-        ])
+        # Hardware & sensor nodes (no namespace wrapping — avoids container name conflicts)
+        robot_state_publisher_node,
+        twist_to_wheel_cmd_node,
+        joy_node,
+        teleop_twist_joy_node,
+        hardware_lidar_node,
+        hardware_esp32_serial_node,
+        realsense_camera_launch,
+
+        # Nav2 bringup (non-composed: each node runs as separate process — stable on Pi 5)
+        nav2_bringup_launch,
+
+        # Visualization
+        rviz_node,
     ])

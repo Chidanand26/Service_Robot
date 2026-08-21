@@ -24,39 +24,10 @@ from lifecycle_msgs.msg import Transition
 
 
 def resolve_ports():
+    """Return default port values. Override at launch via serial_port:= and esp_port:= args."""
     if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
         return '/dev/rplidar', '/dev/esp32'
-    try:
-        import glob, serial, time
-        ports = sorted(glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*'))
-        if not ports:
-            return '/dev/ttyUSB1', '/dev/ttyUSB0'
-        if len(ports) == 1:
-            return ports[0], ports[0]
-        
-        esp_port = None
-        lidar_port = None
-        for p in ports:
-            try:
-                s = serial.Serial(p, 115200, timeout=0.3)
-                s.reset_input_buffer()
-                s.write(b'V 0.0 0.0\n')
-                time.sleep(0.15)
-                buf = s.read(s.in_waiting or 100).decode('utf-8', errors='ignore')
-                s.close()
-                if 'P ' in buf:
-                    esp_port = p
-            except Exception:
-                pass
-        
-        if esp_port:
-            other_ports = [p for p in ports if p != esp_port]
-            lidar_port = other_ports[0] if other_ports else '/dev/ttyUSB1'
-            return lidar_port, esp_port
-        
-        return '/dev/ttyUSB1', '/dev/ttyUSB0'
-    except Exception:
-        return '/dev/ttyUSB1', '/dev/ttyUSB0'
+    return '/dev/rplidar', '/dev/esp32'
 
 
 

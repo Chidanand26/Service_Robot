@@ -271,7 +271,7 @@
   </link>
 
   <joint name="lidar_joint" type="fixed">
-    <origin xyz="0.192495 -0.003059 0.760213094" rpy="1.5707963 0 3.14159265359" />
+    <origin xyz="0.180 0.0 0.760213094" rpy="1.5707963 0 3.14159265359" />
     <parent link="base_link" />
     <child link="lidar_link" />
   </joint>
@@ -310,7 +310,7 @@
   </link>
 
   <joint name="camera_joint" type="fixed">
-    <origin xyz="0.241580 0.009331 0.156845974" rpy="1.79844 0 1.5707963" />
+    <origin xyz="0.215 0.0 0.156845974" rpy="1.79844 0 1.5707963" />
     <parent link="base_link" />
     <child link="camera_link" />
   </joint>

@@ -69,15 +69,15 @@
   </link>
 
   <!-- ==================== Differential-Drive Wheels ====================
-       After the 180-deg base flip the physical sides swap:
-         left_wheel  = CAD wheel at Y=-0.041  -> mesh wheel_1_2  -> ROS +Y
-         right_wheel = CAD wheel at Y=+0.386  -> mesh wheel_1    -> ROS -Y
-       joint rpy=pi keeps each mesh physically put; axis="0 -1 0" (child frame)
-       resolves to world +Y so +velocity drives the robot forward (+X). -->
+       Canonical ROS conventions (REP-103):
+         * left_wheel  at +Y (+0.185 m)
+         * right_wheel at -Y (-0.185 m)
+         * joint axis = "0 1 0" (+Y): positive rotation drives robot forward (+X).
+         * CAD mesh visual rotation (pi about Z) isolated to <visual>/<inertial> tags. -->
   <link name="left_wheel">
     <!-- physical LEFT wheel (+Y); mesh wheel_1_2 -->
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 3.14159265359" />
       <geometry>
         <mesh filename="package://amr_assembly_description/meshes/wheel_1_2.dae" />
       </geometry>
@@ -90,24 +90,24 @@
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="-9.7144515e-17 0.0051290801 1.5612511e-17" rpy="0 0 0" />
+      <origin xyz="-9.7144515e-17 0.0051290801 1.5612511e-17" rpy="0 0 3.14159265359" />
       <mass value="0.996474" />
       <inertia ixx="0.00181597" ixy="3.51575e-36" ixz="-4.98632e-20" iyy="0.00321674" iyz="-3.77852e-36" izz="0.00181597" />
     </inertial>
   </link>
 
   <joint name="left_wheel_joint" type="continuous">
-    <origin xyz="0 0.185 0.015" rpy="0 0 3.14159265359" />
+    <origin xyz="0 0.185 0.015" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="left_wheel" />
-    <axis xyz="0 -1 0" />
+    <axis xyz="0 1 0" />
     <!-- mates: CONCENTRIC, CONCENTRIC -->
   </joint>
 
   <link name="right_wheel">
     <!-- physical RIGHT wheel (-Y); mesh wheel_1 -->
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 3.14159265359" />
       <geometry>
         <mesh filename="package://amr_assembly_description/meshes/wheel_1.dae" />
       </geometry>
@@ -120,17 +120,17 @@
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="-9.5409791e-17 -0.0044220319 -4.3368087e-18" rpy="0 0 0" />
+      <origin xyz="-9.5409791e-17 -0.0044220319 -4.3368087e-18" rpy="0 0 3.14159265359" />
       <mass value="0.996474" />
       <inertia ixx="0.00181597" ixy="2.00001e-36" ixz="-1.80785e-19" iyy="0.00321674" iyz="-4.75791e-36" izz="0.00181597" />
     </inertial>
   </link>
 
   <joint name="right_wheel_joint" type="continuous">
-    <origin xyz="0 -0.185 0.015" rpy="0 0 3.14159265359" />
+    <origin xyz="0 -0.185 0.015" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="right_wheel" />
-    <axis xyz="0 -1 0" />
+    <axis xyz="0 1 0" />
     <!-- mates: CONCENTRIC, CONCENTRIC -->
   </joint>
 

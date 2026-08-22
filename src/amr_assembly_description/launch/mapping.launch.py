@@ -270,6 +270,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Staggered startups to avoid USB initialization contention
+    delayed_lidar_launch = TimerAction(
+        period=1.5,
+        actions=[hardware_lidar_node]
+    )
+
+    delayed_slam_launch = TimerAction(
+        period=3.0,
+        actions=[slam_toolbox_node, slam_lifecycle_starter_node, rviz_node]
+    )
+
     launch_actions = [
         DeclareLaunchArgument(
             'namespace', default_value='',
@@ -313,13 +324,11 @@ def generate_launch_description():
             sim_odometry_node,
             sim_laser_node,
             hardware_static_tf_node,
-            hardware_lidar_node,
             hardware_esp32_wifi_node,
             hardware_esp32_serial_node,
             realsense_camera_launch,
-            slam_toolbox_node,
-            slam_lifecycle_starter_node,
-            rviz_node,
+            delayed_lidar_launch,
+            delayed_slam_launch,
         ]),
     ]
 

@@ -16,7 +16,8 @@ import os
 from ament_index_python.packages import get_package_share_directory, get_packages_with_prefixes
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, GroupAction,
-                            IncludeLaunchDescription, SetEnvironmentVariable)
+                            IncludeLaunchDescription, SetEnvironmentVariable,
+                            TimerAction)
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -71,7 +72,7 @@ def generate_launch_description():
 
     available_packages = get_packages_with_prefixes()
 
-    # 1. Robot State Publisher
+    # 1. Robot State Publisher (URDF TF broadcaster)
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -83,7 +84,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 3. 50Hz S-Curve Jerk-Limited Motion Controller
+    # 2. 50Hz S-Curve Jerk-Limited Motion Controller
     twist_to_wheel_cmd_node = Node(
         package='amr_assembly_description',
         executable='twist_to_wheel_cmd.py',
@@ -96,7 +97,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 4. Teleoperation (Joy + Teleop Joy for manual override)
+    # 3. Teleoperation (Joy + Teleop Joy for manual override)
     joy_node = Node(
         package='joy',
         executable='joy_node',
@@ -127,22 +128,7 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 5. Hardware Sensors & Drivers
-    hardware_lidar_node = Node(
-        package='sllidar_ros2',
-        executable='sllidar_node',
-        name='sllidar_node',
-        parameters=[{
-            'channel_type': 'serial',
-            'serial_port': serial_port,
-            'serial_baudrate': serial_baudrate,
-            'frame_id': 'laser_frame',
-            'inverted': False,
-            'angle_compensate': True,
-        }],
-        output='screen',
-    )
-
+    # 4. Hardware Sensors & Drivers (Staggered to prevent serial port contention)
     hardware_esp32_serial_node = Node(
         condition=IfCondition(use_esp32),
         package='amr_assembly_description',
@@ -154,11 +140,35 @@ def generate_launch_description():
             'wheel_radius': 0.070,
             'wheel_separation': 0.470,
             'publish_tf': True,
+            'suppress_alarm_errors': True,
         }],
         output='screen',
     )
 
-    # 6. Intel RealSense D435i Camera
+    hardware_lidar_node = Node(
+        package='sllidar_ros2',
+        executable='sllidar_node',
+        name='sllidar_node',
+        parameters=[{
+            'channel_type': 'serial',
+            'serial_port': serial_port,
+            'serial_baudrate': serial_baudrate,
+            'frame_id': 'laser_frame',
+            'inverted': False,
+            'angle_compensate': True,
+            'auto_reconnect': True,
+            'scan_mode': 'Standard',
+        }],
+        output='screen',
+    )
+
+    # Delay LiDAR startup by 1.5s to let ESP32 settle and avoid USB bus contention
+    delayed_lidar_launch = TimerAction(
+        period=1.5,
+        actions=[hardware_lidar_node]
+    )
+
+    # 5. Intel RealSense D435i Camera
     realsense_camera_launch = GroupAction(
         condition=IfCondition(enable_camera),
         actions=[
@@ -184,7 +194,7 @@ def generate_launch_description():
         ] if 'realsense2_camera' in available_packages else []
     )
 
-    # 7. Nav2 Bringup Stack (AMCL + Costmaps + Path Planner + Regulated Pure Pursuit Controller)
+    # 6. Nav2 Bringup (Delayed by 3.0s until odom and TF are actively broadcasting)
     nav2_bringup_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
@@ -202,13 +212,23 @@ def generate_launch_description():
         }.items(),
     )
 
-    # 8. RViz2
+    delayed_nav2_launch = TimerAction(
+        period=3.0,
+        actions=[nav2_bringup_launch]
+    )
+
+    # 7. RViz2 (Delayed by 3.5s)
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
         arguments=['-d', rviz_file],
         output='screen',
+    )
+
+    delayed_rviz_launch = TimerAction(
+        period=3.5,
+        actions=[rviz_node]
     )
 
     return LaunchDescription([
@@ -222,18 +242,20 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_camera', default_value='false', description='Enable RealSense D435i camera'),
         DeclareLaunchArgument('autostart', default_value='true', description='Automatically startup Nav2 stack'),
 
-        # Hardware & sensor nodes (no namespace wrapping — avoids container name conflicts)
+        # Step 1: Core robot state & odometry TF (immediate)
         robot_state_publisher_node,
         twist_to_wheel_cmd_node,
         joy_node,
         teleop_twist_joy_node,
-        hardware_lidar_node,
         hardware_esp32_serial_node,
         realsense_camera_launch,
 
-        # Nav2 bringup (non-composed: each node runs as separate process — stable on Pi 5)
-        nav2_bringup_launch,
+        # Step 2: Delayed LiDAR startup (avoids USB initialization collision)
+        delayed_lidar_launch,
 
-        # Visualization
-        rviz_node,
+        # Step 3: Delayed Nav2 stack (waits for stable odom & scan)
+        delayed_nav2_launch,
+
+        # Step 4: Delayed RViz2
+        delayed_rviz_launch,
     ])

@@ -63,6 +63,7 @@ class ESP32SerialDriver(Node):
 
         # Serial port
         self.ser = None
+        self.last_connect_attempt = 0.0
         self._connect()
 
         # ROS interfaces
@@ -81,7 +82,6 @@ class ESP32SerialDriver(Node):
         # Publish identity TF immediately (so SLAM can find laser_frame right away)
         self._publish_tf()
 
-        self.last_connect_attempt = 0.0
         self.get_logger().info(
             f'ESP32 Serial Driver started on {self.port} @ {self.baudrate} baud. '
             f'Real-time odometry + TF enabled.'

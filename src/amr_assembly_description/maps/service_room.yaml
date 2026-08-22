@@ -1,7 +1,7 @@
 image: service_room.pgm
 mode: trinary
 resolution: 0.050
-origin: [-8.298, -10.418, 0]
+origin: [-7.808, -16.577, 0]
 negate: 0
 occupied_thresh: 0.65
 free_thresh: 0.196

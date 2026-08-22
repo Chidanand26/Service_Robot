@@ -49,31 +49,31 @@
   <link name="base_link">
     <!-- sw2robot density="1000" inertia="solidworks" -->
     <visual>
-      <!-- chassis mesh compensated back to its physical CAD pose -->
-      <origin xyz="-0.225 0.1725 0" rpy="0 0 3.14159265359" />
+      <!-- chassis mesh rotated 90 deg so wide shelf face is along Y, facing +X -->
+      <origin xyz="-0.225 0.1725 0" rpy="0 0 1.57079632679" />
       <geometry>
         <mesh filename="package://amr_assembly_description/meshes/Chassis_1.dae" />
       </geometry>
     </visual>
     <collision>
-      <origin xyz="-0.225 0.1725 0" rpy="0 0 3.14159265359" />
+      <origin xyz="-0.225 0.1725 0" rpy="0 0 1.57079632679" />
       <geometry>
         <mesh filename="package://amr_assembly_description/meshes/Chassis_1.stl" />
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="-0.00027745 0.1725 0.40790949" rpy="0 0 3.14159265359" />
+      <origin xyz="-0.00027745 0.1725 0.40790949" rpy="0 0 1.57079632679" />
       <mass value="2.58114" />
-      <inertia ixx="0.204923" ixy="1.30104e-18" ixz="2.47797e-05" iyy="0.225004" iyz="1.74557e-17" izz="0.107037" />
+      <inertia ixx="0.225004" ixy="1.30104e-18" ixz="2.47797e-05" iyy="0.204923" iyz="1.74557e-17" izz="0.107037" />
     </inertial>
   </link>
 
   <!-- ==================== Differential-Drive Wheels ====================
-       Canonical ROS conventions (REP-103):
-         * left_wheel  at +Y (+0.185 m)
-         * right_wheel at -Y (-0.185 m)
-         * joint axis = "0 1 0" (+Y): positive rotation drives robot forward (+X).
-         * CAD mesh visual rotation (pi about Z) isolated to <visual>/<inertial> tags. -->
+       Physical AMR Hardware layout (from photographs):
+         * left_wheel  at +Y (+0.235 m) (outer side of chassis)
+         * right_wheel at -Y (-0.235 m) (outer side of chassis)
+         * Wheel track width W = 0.470 m
+         * joint axis = "0 1 0" (+Y): positive rotation drives robot forward (+X). -->
   <link name="left_wheel">
     <!-- physical LEFT wheel (+Y); mesh wheel_1_2 -->
     <visual>
@@ -97,7 +97,7 @@
   </link>
 
   <joint name="left_wheel_joint" type="continuous">
-    <origin xyz="0 0.185 0.015" rpy="0 0 0" />
+    <origin xyz="0 0.235 0.015" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="left_wheel" />
     <axis xyz="0 1 0" />
@@ -127,7 +127,7 @@
   </link>
 
   <joint name="right_wheel_joint" type="continuous">
-    <origin xyz="0 -0.185 0.015" rpy="0 0 0" />
+    <origin xyz="0 -0.235 0.015" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="right_wheel" />
     <axis xyz="0 1 0" />
@@ -158,7 +158,7 @@
   </link>
 
   <joint name="caster_wheel1_joint" type="fixed">
-    <origin xyz="0.120775 0.117491 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <origin xyz="0.1174 0.1208 -0.007140912" rpy="1.5707963 0 0" />
     <parent link="base_link" />
     <child link="caster_wheel1" />
   </joint>
@@ -186,7 +186,7 @@
   </link>
 
   <joint name="caster_wheel2_joint" type="fixed">
-    <origin xyz="-0.149932 -0.117423 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <origin xyz="-0.1174 -0.1499 -0.007140912" rpy="1.5707963 0 0" />
     <parent link="base_link" />
     <child link="caster_wheel2" />
   </joint>
@@ -214,7 +214,7 @@
   </link>
 
   <joint name="caster_wheel3_joint" type="fixed">
-    <origin xyz="0.121583 -0.117333 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <origin xyz="0.1174 -0.1499 -0.007140912" rpy="1.5707963 0 0" />
     <parent link="base_link" />
     <child link="caster_wheel3" />
   </joint>
@@ -242,7 +242,7 @@
   </link>
 
   <joint name="caster_wheel4_joint" type="fixed">
-    <origin xyz="-0.149381 0.116260 -0.007140912" rpy="1.5707963 0 -1.5707963" />
+    <origin xyz="-0.1174 0.1208 -0.007140912" rpy="1.5707963 0 0" />
     <parent link="base_link" />
     <child link="caster_wheel4" />
   </joint>

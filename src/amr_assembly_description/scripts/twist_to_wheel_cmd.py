@@ -25,7 +25,7 @@ class TwistToWheelCmd(Node):
 
         # Robot kinematic parameters
         self.declare_parameter('wheel_radius', 0.070)       # 70mm radius
-        self.declare_parameter('wheel_separation', 0.370)   # 370mm track width
+        self.declare_parameter('wheel_separation', 0.470)   # 470mm track width
         self.declare_parameter('control_rate_hz', 50.0)     # 50 Hz control loop
 
         self.R = self.get_parameter('wheel_radius').value

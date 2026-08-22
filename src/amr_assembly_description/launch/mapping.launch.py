@@ -66,7 +66,7 @@ def generate_launch_description():
         package='amr_assembly_description',
         executable='twist_to_wheel_cmd.py',
         name='twist_to_wheel_cmd',
-        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.370}],
+        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.470}],
         output='screen',
     )
 
@@ -115,7 +115,7 @@ def generate_launch_description():
         package='amr_assembly_description',
         executable='sim_robot_odometry.py',
         name='sim_robot_odometry',
-        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.370}],
+        parameters=[{'wheel_radius': 0.070, 'wheel_separation': 0.470}],
         output='screen',
     )
 
@@ -170,7 +170,7 @@ def generate_launch_description():
             'joint_name_1': 'left_wheel_joint',
             'joint_name_2': 'right_wheel_joint',
             'wheel_radius': 0.070,
-            'wheel_separation': 0.370,
+            'wheel_separation': 0.470,
             'publish_tf': True,
             'suppress_alarm_errors': True
         }],
@@ -188,7 +188,7 @@ def generate_launch_description():
             'joint_name_1':     'left_wheel_joint',
             'joint_name_2':     'right_wheel_joint',
             'wheel_radius':     0.070,
-            'wheel_separation': 0.370,
+            'wheel_separation': 0.470,
             'publish_tf':       True,
             'suppress_alarm_errors': True,
         }],

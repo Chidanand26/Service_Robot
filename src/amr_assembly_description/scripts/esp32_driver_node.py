@@ -38,7 +38,7 @@ class ESP32SerialDriver(Node):
         self.declare_parameter('joint_name_1',  'left_wheel_joint')
         self.declare_parameter('joint_name_2',  'right_wheel_joint')
         self.declare_parameter('wheel_radius',  0.070)    # metres (70mm)
-        self.declare_parameter('wheel_separation', 0.370) # metres (370mm)
+        self.declare_parameter('wheel_separation', 0.470) # metres (470mm)
         self.declare_parameter('publish_tf',    True)
         self.declare_parameter('suppress_alarm_errors', True)
 

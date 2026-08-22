@@ -75,7 +75,7 @@ def generate_launch_description():
         name='twist_to_wheel_cmd',
         parameters=[{
             'wheel_radius': 0.070,
-            'wheel_separation': 0.370,
+            'wheel_separation': 0.470,
             'control_rate_hz': 50.0,
         }],
         output='screen',
@@ -137,7 +137,7 @@ def generate_launch_description():
             'port': esp_port,
             'baudrate': 115200,
             'wheel_radius': 0.070,
-            'wheel_separation': 0.370,
+            'wheel_separation': 0.470,
             'publish_tf': True,
         }],
         output='screen',

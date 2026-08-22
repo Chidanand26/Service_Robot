@@ -23,7 +23,7 @@ class SimRobotOdometry(Node):
         super().__init__('sim_robot_odometry')
 
         self.declare_parameter('wheel_radius', 0.070)
-        self.declare_parameter('wheel_separation', 0.370)
+        self.declare_parameter('wheel_separation', 0.470)
 
         self.R = self.get_parameter('wheel_radius').value
         self.W = self.get_parameter('wheel_separation').value

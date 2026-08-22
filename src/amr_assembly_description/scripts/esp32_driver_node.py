@@ -79,6 +79,7 @@ class ESP32SerialDriver(Node):
         # Publish identity TF immediately (so SLAM can find laser_frame right away)
         self._publish_tf()
 
+        self.last_connect_attempt = 0.0
         self.get_logger().info(
             f'ESP32 Serial Driver started on {self.port} @ {self.baudrate} baud. '
             f'Real-time odometry + TF enabled.'
@@ -87,12 +88,29 @@ class ESP32SerialDriver(Node):
     # ─── Serial Connection ──────────────────────────────────────────────────
 
     def _connect(self):
-        try:
-            self.ser = serial.Serial(self.port, self.baudrate, timeout=0.02)
-            self.get_logger().info(f'Connected to ESP32 on {self.port}')
-        except serial.SerialException as e:
-            self.get_logger().warn(f'Serial connect failed: {e}. Will retry...')
-            self.ser = None
+        now = time.monotonic()
+        if now - self.last_connect_attempt < 1.0:
+            return
+        self.last_connect_attempt = now
+
+        # Try designated port first, then fallbacks if needed
+        candidate_ports = [self.port]
+        if self.port.startswith('/dev/esp') or not os.path.exists(self.port):
+            candidate_ports.extend(['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0'])
+
+        for p in candidate_ports:
+            if not os.path.exists(p):
+                continue
+            try:
+                self.ser = serial.Serial(p, self.baudrate, timeout=0.02)
+                self.port = p
+                self.get_logger().info(f'Connected to ESP32 on {p}')
+                return
+            except serial.SerialException:
+                pass
+
+        self.ser = None
+        self.get_logger().warn(f'Serial connect to ESP32 failed on {candidate_ports}. Will retry...', throttle_duration_sec=3.0)
 
     # ─── Command Sender ─────────────────────────────────────────────────────
 

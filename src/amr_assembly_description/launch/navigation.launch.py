@@ -25,10 +25,25 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def resolve_ports():
-    """Return default port values. Override at launch via serial_port:= and esp_port:= args."""
-    if os.path.exists('/dev/rplidar') and os.path.exists('/dev/esp32'):
-        return '/dev/rplidar', '/dev/esp32'
-    return '/dev/rplidar', '/dev/esp32'
+    """Return verified port values using udev symlinks or hardware probe."""
+    lidar_port = '/dev/rplidar' if os.path.exists('/dev/rplidar') else None
+    esp_port = '/dev/esp32' if os.path.exists('/dev/esp32') else None
+
+    if not lidar_port or not esp_port:
+        import glob
+        ports = sorted(glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*'))
+        if len(ports) >= 2:
+            if not lidar_port:
+                lidar_port = ports[1]
+            if not esp_port:
+                esp_port = ports[0]
+        elif len(ports) == 1:
+            if not lidar_port:
+                lidar_port = ports[0]
+            if not esp_port:
+                esp_port = ports[0]
+
+    return lidar_port or '/dev/rplidar', esp_port or '/dev/esp32'
 
 
 
